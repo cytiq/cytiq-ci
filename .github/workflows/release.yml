@@ -1,0 +1,273 @@
+name: release
+on:
+  push:
+    tags:
+      - "*.*.*-rc*"
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag; for a release run, the changelog branch name (see tag_prefix)"
+        type: string
+        required: true
+      tag_prefix:
+        description: "Prefix to strip from tag (for branch-based tags)"
+        type: string
+        default: "chore/update-changelog-"
+      artifacts:
+        description: "Artifacts to upload (comma/newline-separated globs)"
+        type: string
+        default: ""
+      update_changelog:
+        description: "true: open the changelog PR for an RC tag; false: tag and publish the release"
+        type: boolean
+        default: true
+      cleanup_rc_tags:
+        description: "Delete RC tags after release"
+        type: boolean
+        default: false
+    secrets:
+      GH_TOKEN:
+        required: false
+      GPG_PRIVATE_KEY:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      GPG_FINGERPRINT:
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  GIT_USER_NAME: Nikita Syzrantsev
+  GIT_USER_EMAIL: 47356892+nsyzrantsev@users.noreply.github.com
+
+jobs:
+  release:
+    # A called workflow sees the caller's event, so both direct triggers and
+    # calls arrive here as push or pull_request; callers gate their own jobs.
+    if: >-
+      inputs.tag != '' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'chore/update-changelog-'))
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve workflow context
+        id: vars
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TAG_PREFIX: ${{ inputs.tag_prefix }}
+          INPUT_UPDATE_CHANGELOG: ${{ inputs.update_changelog }}
+          INPUT_CLEANUP_RC_TAGS: ${{ inputs.cleanup_rc_tags }}
+        run: |
+          {
+            if [ -n "$INPUT_TAG" ]; then
+              # Called from another repository: github.event_name is the
+              # caller's event, so the inputs decide what this run does.
+              tag="$INPUT_TAG"
+              from_pr=false
+              if [ -n "$INPUT_TAG_PREFIX" ] && [ "${tag#"$INPUT_TAG_PREFIX"}" != "$tag" ]; then
+                tag="${tag#"$INPUT_TAG_PREFIX"}"
+                from_pr=true
+              fi
+              if [ "$INPUT_UPDATE_CHANGELOG" = "true" ]; then
+                echo "is_changelog_run=true"
+                echo "rc_tag=$tag"
+                echo "tag=${tag%%-rc*}"
+              else
+                echo "is_changelog_run=false"
+                echo "from_pr=$from_pr"
+                echo "tag=$tag"
+                echo "cleanup_rc_tags=$INPUT_CLEANUP_RC_TAGS"
+              fi
+            elif [ "$EVENT_NAME" = "push" ]; then
+              echo "is_changelog_run=true"
+              echo "rc_tag=$REF_NAME"
+              echo "tag=${REF_NAME%%-rc*}"
+            else
+              echo "is_changelog_run=false"
+              echo "from_pr=true"
+              echo "tag=${PR_HEAD_REF#chore/update-changelog-}"
+              echo "cleanup_rc_tags=true"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Install typos-cli
+        if: steps.vars.outputs.is_changelog_run == 'true'
+        uses: taiki-e/install-action@v2.87.5
+        with:
+          tool: typos
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          fingerprint: ${{ secrets.GPG_FINGERPRINT }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          git_tag_gpgsign: true
+          git_committer_name: ${{ env.GIT_USER_NAME }}
+          git_committer_email: ${{ env.GIT_USER_EMAIL }}
+
+      # Changelog generation flow (triggered by RC tag push)
+      - name: Generate changelog files
+        if: steps.vars.outputs.is_changelog_run == 'true'
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --verbose
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_REPO: ${{ github.repository }}
+          GIT_CLIFF_TAG: ${{ steps.vars.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Generate release notes
+        if: steps.vars.outputs.is_changelog_run == 'true'
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
+        env:
+          OUTPUT: RELEASE_NOTES.md
+          GITHUB_REPO: ${{ github.repository }}
+          GIT_CLIFF_TAG: ${{ steps.vars.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Update version in manifest files
+        id: version
+        if: steps.vars.outputs.is_changelog_run == 'true'
+        env:
+          VERSION: ${{ steps.vars.outputs.tag }}
+        run: |
+          ADD_PATHS="CHANGELOG.md
+          RELEASE_NOTES.md"
+          add_path() { ADD_PATHS="$ADD_PATHS"$'\n'"$1"; }
+
+          # Only the first `version = ` line: the [project] / [workspace.package]
+          # / [package] version, never a dependency or tool setting below it.
+          if [[ -f pyproject.toml ]] && grep -q '^version = ' pyproject.toml; then
+            echo "Updating version in pyproject.toml to $VERSION"
+            sed -i "0,/^version = .*/s//version = \"$VERSION\"/" pyproject.toml
+            add_path pyproject.toml
+            [[ -f uv.lock ]] && { add_path uv.lock; echo "uv=true" >> "$GITHUB_OUTPUT"; }
+          fi
+
+          if [[ -f Cargo.toml ]] && grep -q '^version = ' Cargo.toml; then
+            echo "Updating version in Cargo.toml to $VERSION"
+            sed -i "0,/^version = .*/s//version = \"$VERSION\"/" Cargo.toml
+            add_path Cargo.toml
+            [[ -f Cargo.lock ]] && { add_path Cargo.lock; echo "cargo=true" >> "$GITHUB_OUTPUT"; }
+          fi
+
+          if [[ -f package.json ]]; then
+            echo "Updating version in package.json to $VERSION"
+            jq --arg ver "$VERSION" '.version = $ver' package.json > package.json.tmp
+            mv package.json.tmp package.json
+            add_path package.json
+            [[ -f bun.lock ]] && { add_path bun.lock; echo "bun=true" >> "$GITHUB_OUTPUT"; }
+          fi
+
+          {
+            echo "add_paths<<EOF"
+            echo "$ADD_PATHS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Lockfiles only take the new version of the project itself; nothing is
+      # upgraded, unlike a repository's own `just lock` recipe may do.
+      - uses: astral-sh/setup-uv@v7
+        if: steps.version.outputs.uv == 'true'
+
+      - name: Update uv.lock
+        if: steps.version.outputs.uv == 'true'
+        run: uv lock
+
+      - name: Update Cargo.lock
+        if: steps.version.outputs.cargo == 'true'
+        run: cargo update --workspace
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.version.outputs.bun == 'true'
+
+      - name: Update bun.lock
+        if: steps.version.outputs.bun == 'true'
+        run: bun install --lockfile-only
+
+      - name: Create changelog pull request
+        if: steps.vars.outputs.is_changelog_run == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GH_TOKEN || github.token }}
+          commit-message: "chore(release): update changelog for ${{ steps.vars.outputs.tag }}"
+          title: "chore(release): update changelog for ${{ steps.vars.outputs.tag }}"
+          body: |
+            Automated changelog update for ${{ steps.vars.outputs.tag }}.
+
+            Triggered by RC tag: `${{ steps.vars.outputs.rc_tag }}`
+
+            **Merging this PR will create the release tag and GitHub Release.**
+          branch: "chore/update-changelog-${{ steps.vars.outputs.tag }}"
+          base: main
+          add-paths: ${{ steps.version.outputs.add_paths }}
+          delete-branch: true
+          labels: release
+
+      - name: Create release tag
+        if: steps.vars.outputs.is_changelog_run == 'false'
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          git tag -fs "$TAG" -m "Release $TAG"
+          git push origin "$TAG" --force
+
+      - name: Generate release notes for GitHub Release
+        if: steps.vars.outputs.is_changelog_run == 'false' && steps.vars.outputs.from_pr != 'true'
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
+        env:
+          OUTPUT: RELEASE_NOTES.md
+          GITHUB_REPO: ${{ github.repository }}
+          GIT_CLIFF_TAG: ${{ steps.vars.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Create GitHub Release
+        if: steps.vars.outputs.is_changelog_run == 'false'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: ${{ inputs.artifacts }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Delete RC tags
+        if: steps.vars.outputs.is_changelog_run == 'false' && steps.vars.outputs.cleanup_rc_tags == 'true'
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          echo "Deleting RC tags for release: $TAG"
+          for rc_tag in $(git tag -l "$TAG-rc*"); do
+            echo "Deleting tag: $rc_tag"
+            git push origin --delete "$rc_tag" || true
+            git tag -d "$rc_tag" || true
+          done
