@@ -1,0 +1,24 @@
+# OS
+.DS_Store
+
+# IDE/editor
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings (permissions only)
+.claude/settings.local.json
+
+# GPG key generation artifacts (just gen-gpg-key)
+gpg-key-*/
+fingerprint.txt
+passphrase.txt
+private.asc
+public.asc

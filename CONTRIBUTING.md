@@ -1,0 +1,48 @@
+# Contributing to cytiq-ci
+
+## Purpose
+
+Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` repositories. They are ported from
+`vibyy-app/vibyy-ci`; keep the two in step where it makes sense, but cytiq's versions may diverge (see below).
+
+## Layout
+
+- `.github/workflows/python.yml`, `release.yml`, `docker-publish.yml`: the reusable workflows.
+- `.github/workflows/ci.yml`: this repository's own CI (actionlint).
+- `release.yml` also triggers on this repository's own RC tags and changelog PRs, so `cytiq-ci` releases itself.
+- `scripts/gen-gpg-key.sh`: generates the release-signing key the `GPG_*` secrets hold.
+
+## Differences from vibyy-ci
+
+- `release.yml` decides what to do from its `tag` input when called. Inside a called workflow, `github.event_name`
+  is the **caller's** event (`push` or `pull_request`), never `workflow_call`, so branching on the event name alone
+  ignored `artifacts`, `update_changelog` and `cleanup_rc_tags`.
+- `release.yml` also bumps `Cargo.toml`, and updates lockfiles with `uv lock`, `cargo update --workspace` and
+  `bun install --lockfile-only` rather than the caller's `just lock`, which may upgrade every dependency.
+- `docker-publish.yml` takes `ref`, `build_args` and `platforms`, pushes SBOM and provenance attestations, and
+  returns the pushed `digest`.
+
+## Conventions
+
+- Each workflow uses `workflow_call` with typed inputs and optional secrets, and declares minimal `permissions`.
+- Pass expressions to shell steps through `env`, not inline in `run:`.
+- Inputs use `snake_case`; YAML uses 2-space indentation and the `.yml` extension.
+- Callers pin a tag (`@0.0.1`). A change to an input or secret is a breaking change for callers; release it as a new
+  version and note it in the PR.
+
+## Testing
+
+`just lint` runs actionlint locally. Workflows can't run in this repository: to test a change, push a branch and
+point a caller at it temporarily (`uses: cytiq/cytiq-ci/.github/workflows/<name>.yml@<branch>`), then switch the
+caller back to the released tag.
+
+## Access
+
+`cytiq-ci` is private. Callers in the organisation can use it only while
+**Settings → Actions → General → Access** is set to "Accessible from repositories in the 'cytiq' organization".
+
+## Commits and pull requests
+
+Conventional Commits with a scope, e.g. `fix(release): strip the changelog branch prefix`. git-cliff builds the
+changelog from them. PRs describe the workflows touched and any new or changed inputs and secrets, with a usage
+example.

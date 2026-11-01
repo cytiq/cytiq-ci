@@ -1,0 +1,115 @@
+name: docker-publish
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "Image name, without registry/org prefix (e.g. cytiq-cli)"
+        type: string
+        required: true
+      version:
+        description: "Primary tag to push (e.g. 1.2.3 or 1.2.3-rc1)"
+        type: string
+        required: true
+      latest:
+        description: "Also tag and push :latest"
+        type: boolean
+        default: false
+      ref:
+        description: "Git ref or commit to build (default: the ref that triggered the caller)"
+        type: string
+        default: ""
+      context:
+        description: "Docker build context"
+        type: string
+        default: "."
+      dockerfile:
+        description: "Path to the Dockerfile"
+        type: string
+        default: "Dockerfile"
+      build_args:
+        description: "Build arguments, one KEY=VALUE per line"
+        type: string
+        default: ""
+      platforms:
+        description: "Target platforms, comma-separated"
+        type: string
+        default: "linux/amd64"
+      registry:
+        description: "Container registry"
+        type: string
+        default: "ghcr.io"
+      org:
+        description: "Registry namespace/org"
+        type: string
+        default: "cytiq"
+    secrets:
+      GH_TOKEN:
+        required: false
+    outputs:
+      image:
+        description: "Full image name without a tag (e.g. ghcr.io/cytiq/cytiq-cli)"
+        value: ${{ jobs.publish.outputs.image }}
+      digest:
+        description: "Digest of the pushed image (sha256:...); pin deployments to image@digest"
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve image tags
+        id: tags
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image }}
+          VERSION: ${{ inputs.version }}
+          LATEST: ${{ inputs.latest }}
+        run: |
+          tags="$IMAGE:$VERSION"
+          if [ "$LATEST" = "true" ]; then
+            tags="$tags"$'\n'"$IMAGE:latest"
+          fi
+          {
+            echo "image=$IMAGE"
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN || github.token }}
+
+      # The SBOM and max-mode provenance are pushed as attestations next to the
+      # image, so a pinned digest carries what it was built from.
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          build-args: ${{ inputs.build_args }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          sbom: true
+          provenance: mode=max
+
+      - name: Summary
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "Pushed \`$IMAGE@$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
