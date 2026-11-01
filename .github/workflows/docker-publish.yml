@@ -96,7 +96,7 @@ jobs:
 
       # The SBOM and max-mode provenance are pushed as attestations next to the
       # image, so a pinned digest carries what it was built from.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         id: build
         with:
           context: ${{ inputs.context }}
