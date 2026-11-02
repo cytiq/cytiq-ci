@@ -1,4 +1,9 @@
 name: docker-publish
+
+# Builds each platform natively on its own GitHub-hosted runner (no QEMU) and
+# pushes it by digest; the merge job then tags one manifest list over all of
+# them. Each platform image keeps its SBOM and provenance attestations.
+
 on:
   workflow_call:
     inputs:
@@ -31,9 +36,9 @@ on:
         type: string
         default: ""
       platforms:
-        description: "Target platforms, comma-separated"
+        description: "Target platforms, comma-separated: linux/amd64 and/or linux/arm64"
         type: string
-        default: "linux/amd64"
+        default: "linux/amd64,linux/arm64"
       registry:
         description: "Container registry"
         type: string
@@ -48,43 +53,72 @@ on:
     outputs:
       image:
         description: "Full image name without a tag (e.g. ghcr.io/cytiq/cytiq-cli)"
-        value: ${{ jobs.publish.outputs.image }}
+        value: ${{ jobs.prepare.outputs.image }}
       digest:
-        description: "Digest of the pushed image (sha256:...); pin deployments to image@digest"
-        value: ${{ jobs.publish.outputs.digest }}
+        description: "Digest of the pushed manifest list (sha256:...); pin deployments to image@digest"
+        value: ${{ jobs.merge.outputs.digest }}
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  publish:
+  # The tags to push, and one native runner per platform.
+  prepare:
     runs-on: ubuntu-24.04
     outputs:
-      image: ${{ steps.tags.outputs.image }}
-      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.resolve.outputs.image }}
+      tags: ${{ steps.resolve.outputs.tags }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-
-      - name: Resolve image tags
-        id: tags
+      - name: Resolve image, tags and runners
+        id: resolve
         env:
           IMAGE: ${{ inputs.registry }}/${{ inputs.org }}/${{ inputs.image }}
           VERSION: ${{ inputs.version }}
           LATEST: ${{ inputs.latest }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
           tags="$IMAGE:$VERSION"
           if [ "$LATEST" = "true" ]; then
             tags="$tags"$'\n'"$IMAGE:latest"
           fi
+
+          matrix='[]'
+          IFS=',' read -ra platforms <<< "${PLATFORMS// /}"
+          for platform in "${platforms[@]}"; do
+            case "$platform" in
+              linux/amd64) runner=ubuntu-24.04 ;;
+              linux/arm64) runner=ubuntu-24.04-arm ;;
+              *) echo "::error::No native runner for platform '$platform'"; exit 1 ;;
+            esac
+            matrix=$(jq -c --arg platform "$platform" --arg runner "$runner" \
+              '. + [{platform: $platform, runner: $runner, slug: ($platform | gsub("/"; "-"))}]' <<< "$matrix")
+          done
+          if [ "$matrix" = '[]' ]; then
+            echo "::error::No platforms given"
+            exit 1
+          fi
+
           {
             echo "image=$IMAGE"
+            echo "matrix=$matrix"
             echo "tags<<EOF"
             echo "$tags"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -94,22 +128,85 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_TOKEN || github.token }}
 
-      # The SBOM and max-mode provenance are pushed as attestations next to the
-      # image, so a pinned digest carries what it was built from.
+      # Pushed untagged, by digest only: the merge job tags the manifest list.
+      # The SBOM and max-mode provenance go with each platform's image, so a
+      # pinned digest carries what it was built from.
       - uses: docker/build-push-action@v7
         id: build
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
-          platforms: ${{ inputs.platforms }}
+          platforms: ${{ matrix.platform }}
           build-args: ${{ inputs.build_args }}
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          outputs: type=image,name=${{ needs.prepare.outputs.image }},push-by-digest=true,name-canonical=true,push=true
           sbom: true
           provenance: mode=max
 
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ inputs.image }}-${{ matrix.slug }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # One manifest list over the platform images, pushed under every tag.
+  merge:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-${{ inputs.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: Create and push the manifest list
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              args+=(--tag "$tag")
+            fi
+          done <<< "$TAGS"
+          for digest in *; do
+            args+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Inspect the manifest list
+        id: inspect
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker buildx imagetools inspect "$IMAGE@$digest"
+
       - name: Summary
         env:
-          IMAGE: ${{ steps.tags.outputs.image }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "Pushed \`$IMAGE@$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          DIGEST: ${{ steps.inspect.outputs.digest }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: echo "Pushed \`$IMAGE@$DIGEST\` for \`$PLATFORMS\`" >> "$GITHUB_STEP_SUMMARY"
