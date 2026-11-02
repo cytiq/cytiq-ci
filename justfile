@@ -4,19 +4,27 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-# ---- Install actionlint (macOS: brew / Linux: curl script)
+# ---- Install the pinned, checksum-verified actionlint release
 [group('setup')]
 install-actionlint:
-    @if command -v brew >/dev/null 2>&1; then \
-        brew install actionlint; \
-    else \
-        bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash); \
-    fi
+    bash scripts/install-actionlint.sh .tools/bin
 
 # ---- Lint GitHub Actions workflows
 [group('quality')]
 lint:
-    actionlint -color
+    @if [ -x .tools/bin/actionlint ]; then .tools/bin/actionlint -color; else actionlint -color; fi
+
+[group('quality')]
+test:
+    python3 -m unittest discover -s tests -v
+
+[group('quality')]
+security:
+    zizmor --offline --min-severity low .
+
+[group('metrics')]
+usage-report *args:
+    python3 scripts/ci_usage_report.py {{ args }}
 
 # ---- List existing GPG keys
 [group('setup')]

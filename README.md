@@ -10,21 +10,29 @@ Reusable GitHub Actions workflows for CI/CD across the `cytiq` repositories.
 | `release.yml` | Release flow: an RC tag opens a changelog PR; merging it creates a signed tag and a GitHub Release |
 | `docker-publish.yml` | Build and push a `linux/amd64` + `linux/arm64` image to GHCR with SBOM and provenance attestations; outputs the digest |
 
-Pin a tag, never a branch:
+Pin a released tag. Version 0.2.0 changes the Python caller contract:
 
 ```yaml
 jobs:
   qa:
-    uses: cytiq/cytiq-ci/.github/workflows/python.yml@0.1.0
+    uses: cytiq/cytiq-ci/.github/workflows/python.yml@0.2.0
     with:
       workdir: "."
-    secrets: inherit
+      python_version: "3.13"
+      uv_version: "0.9.8"
 ```
 
 ### `python.yml`
 
-Runs `just install-uv`, `just create-env`, `just sync`, `just sync-dev`, `just lint`, `just type` and
-`just tests-unit` in `workdir`. `GH_TOKEN` (optional) is used to fetch private git dependencies.
+Installs the exact `uv_version` and selected `python_version`, restores the uv download cache keyed by
+`uv.lock`, and runs one `uv sync --locked --all-extras --group dev` in `workdir`. Only the default branch saves
+the cache. It then runs `just ci` with `UV_NO_SYNC=true`, so project commands reuse that environment.
+
+Callers provide a non-mutating `ci` recipe containing their existing checks, fixtures and test selection.
+There is no private-dependency token or global Git configuration. Fetch private reference repositories with
+an explicit checkout and a repository-scoped read token in the caller instead.
+
+Optional `ci-cache-*` artifacts record uv restore hits for 35 days; missing telemetry does not change QA results.
 
 ### `release.yml`
 
@@ -73,12 +81,13 @@ that can push to `main` and whose PRs trigger workflows (the default `GITHUB_TOK
 
 ```yaml
   build-and-push:
-    uses: cytiq/cytiq-ci/.github/workflows/docker-publish.yml@0.1.0
+    uses: cytiq/cytiq-ci/.github/workflows/docker-publish.yml@0.2.0
     with:
       image: cytiq-cli
       dockerfile: docker/Dockerfile
       version: 1.2.3
       latest: true
+      enable_cache: true
       ref: ${{ github.sha }}
       build_args: |
         CYTIQ_BUILD_COMMIT=${{ github.sha }}
@@ -93,11 +102,52 @@ builds natively on its own GitHub-hosted runner (`ubuntu-24.04` or `ubuntu-24.04
 digest; a final job tags the manifest list over them. Other platforms are rejected. The `digest` output is the
 manifest list's digest, which is what deployments should pin.
 
+`enable_cache` defaults to `false`. When enabled, builds import `:cache-linux-amd64` or `:cache-linux-arm64`
+from the image's registry. Default-branch/tag pushes and merged PRs into the default branch export `mode=max`
+cache to the matching tag; other PRs do not write cache. A missing cache or failed cache export does not
+prevent a successful image publication. Build failures still fail the workflow.
+
+Registry cache contains build layers, including intermediate build stages. Treat it as private source material.
+It does not export Cargo cache mounts. In particular, changing source files or `CYTIQ_BUILD_COMMIT` can still
+invalidate the compiler layer. Measure repeated and changed-source builds before adding cargo-chef or sccache.
+
+## Usage reporting
+
+The weekly **CI usage report** workflow reads the last 30 full UTC days across the nine configured repositories.
+Set `CI_METRICS_TOKEN` in this repository to an organization-approved fine-grained token with **Actions: read**
+and automatic Metadata read access on those repositories only. No billing, contents-write or organization-admin
+permission is needed. The token is available only to the collection step; checkout uses its own read-only token.
+
+The workflow stores `report.md`, `report.json`, `jobs.csv` and the re-renderable `snapshot.json` as private
+artifacts for 90 days. Missing token/API access fails the run; partial reports are preserved and marked incomplete.
+
+Local usage requires Python 3.11+ and authenticated `gh`:
+
+```bash
+python3 scripts/ci_usage_report.py --output-dir report
+python3 scripts/ci_usage_report.py --snapshot report/snapshot.json --output-dir report-replayed
+```
+
+Totals include failed/cancelled attempts and nested reusable jobs under the caller, without double-counting job
+IDs. The UTC window selects runs by creation time; attempts beginning after its exclusive end are excluded.
+Jobs still running at that boundary have unknown duration, not zero cost. Repositories with no Actions jobs
+remain visible. Cost uses the dated list-price snapshot in `config/runner-rates.json`, per-job minute rounding,
+and no allowances, credits or storage: compare actual charges with the billing export.
+
+The PR P50/P95 is first-attempt workflow latency including all jobs, queue and dependency waits. It is a useful
+proxy, not an exact measurement of required-check latency. Queue time is N/A when the API has no job creation
+timestamp. Cache rates cover instrumented restores only (Rust exact matches, uv restored entries), not Docker
+layer reuse or historical runs without telemetry. Raw workflow/job/event aggregates are in `report.json`.
+
 ## Development
 
 ```bash
 just install-actionlint
 just lint            # actionlint over .github/workflows
+just test            # Python 3.11+: reporting behavior tests
+just security        # pinned zizmor: low-and-higher findings
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+See [the rollout guide](docs/ci-rollout.md) for required-check migration, runner experiments and rollback.

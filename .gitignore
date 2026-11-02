@@ -22,3 +22,10 @@ fingerprint.txt
 passphrase.txt
 private.asc
 public.asc
+
+# CI tools and generated usage reports
+.tools/
+report/
+report-replayed/
+__pycache__/
+*.pyc

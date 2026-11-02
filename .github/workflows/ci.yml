@@ -2,27 +2,45 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner for comparing lightweight checks"
+        type: choice
+        options: [ubuntu-24.04, ubuntu-slim]
+        default: ubuntu-24.04
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate Workflows
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner || vars.CI_LIGHT_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Install actionlint
+      - name: Install pinned validation tools
         run: |
-          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          pwd >> "$GITHUB_PATH"
+          bash scripts/install-actionlint.sh
+          bash scripts/install-zizmor.sh
 
       - name: Run actionlint
         run: actionlint -color
+
+      - name: Audit workflow security
+        run: zizmor --offline --min-severity low .
+
+      - name: Test usage reporting
+        run: python3 -m unittest discover -s tests -v

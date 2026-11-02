@@ -101,20 +101,21 @@ jobs:
             fi
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           ref: main
           token: ${{ secrets.GH_TOKEN || github.token }}
+          persist-credentials: false
 
       - name: Install typos-cli
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: taiki-e/install-action@v2.88.0
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: typos
 
       - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v7
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -128,7 +129,7 @@ jobs:
       # Changelog generation flow (triggered by RC tag push)
       - name: Generate changelog files
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4
         with:
           config: cliff.toml
           args: --verbose
@@ -140,7 +141,7 @@ jobs:
 
       - name: Generate release notes
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4
         with:
           config: cliff.toml
           args: --latest --strip all
@@ -192,8 +193,10 @@ jobs:
 
       # Lockfiles only take the new version of the project itself; nothing is
       # upgraded, unlike a repository's own `just lock` recipe may do.
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         if: steps.version.outputs.uv == 'true'
+        with:
+          enable-cache: false
 
       - name: Update uv.lock
         if: steps.version.outputs.uv == 'true'
@@ -203,8 +206,10 @@ jobs:
         if: steps.version.outputs.cargo == 'true'
         run: cargo update --workspace
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: steps.version.outputs.bun == 'true'
+        with:
+          no-cache: true
 
       - name: Update bun.lock
         if: steps.version.outputs.bun == 'true'
@@ -212,7 +217,7 @@ jobs:
 
       - name: Create changelog pull request
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GH_TOKEN || github.token }}
           commit-message: "chore(release): update changelog for ${{ steps.vars.outputs.tag }}"
@@ -233,13 +238,18 @@ jobs:
         if: steps.vars.outputs.is_changelog_run == 'false'
         env:
           TAG: ${{ steps.vars.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           git tag -fs "$TAG" -m "Release $TAG"
-          git push origin "$TAG" --force
+          authorization=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization" \
+            git push origin "$TAG" --force
 
       - name: Generate release notes for GitHub Release
         if: steps.vars.outputs.is_changelog_run == 'false' && steps.vars.outputs.from_pr != 'true'
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4
         with:
           config: cliff.toml
           args: --latest --strip all
@@ -251,7 +261,7 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.vars.outputs.is_changelog_run == 'false'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
           name: ${{ steps.vars.outputs.tag }}
@@ -264,10 +274,15 @@ jobs:
         if: steps.vars.outputs.is_changelog_run == 'false' && steps.vars.outputs.cleanup_rc_tags == 'true'
         env:
           TAG: ${{ steps.vars.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           echo "Deleting RC tags for release: $TAG"
+          authorization=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           for rc_tag in $(git tag -l "$TAG-rc*"); do
             echo "Deleting tag: $rc_tag"
-            git push origin --delete "$rc_tag" || true
+            GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization" \
+              git push origin --delete "$rc_tag" || true
             git tag -d "$rc_tag" || true
           done
