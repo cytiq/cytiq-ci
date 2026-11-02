@@ -210,6 +210,8 @@ class UsageTests(unittest.TestCase):
             usage.cache_artifact(archive("cache.json", record), 42), record
         )
         for name, payload in [
+            ("cache.json", []),
+            ("cache.json", {**record, "caches": ["invalid"]}),
             ("../cache.json", record),
             ("cache.json", {**record, "run_id": 99}),
             ("cache.json", {**record, "caches": [{"name": "cargo", "hit": "true"}]}),

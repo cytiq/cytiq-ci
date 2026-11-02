@@ -152,6 +152,8 @@ jobs:
             ${{ inputs.enable_cache &&
             ((github.event_name == 'push' &&
             (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))) ||
+            (github.event_name == 'workflow_dispatch' &&
+            github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
             (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
             github.event.pull_request.base.ref == github.event.repository.default_branch)) &&
             format('type=registry,ref={0}:cache-{1},mode=max,ignore-error=true', needs.prepare.outputs.image, matrix.slug) || '' }}
@@ -168,7 +170,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: digests-${{ inputs.image }}-${{ matrix.slug }}
+          name: digests-${{ inputs.image }}-${{ inputs.version }}-${{ matrix.slug }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -184,7 +186,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-${{ inputs.image }}-*
+          pattern: digests-${{ inputs.image }}-${{ inputs.version }}-*
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4

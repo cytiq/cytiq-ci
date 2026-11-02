@@ -121,6 +121,8 @@ def cache_artifact(payload: bytes, run_id: int) -> dict:
         if members[0].file_size > 65536:
             raise ValueError("Cache record is too large")
         record = json.loads(archive.read(members[0]))
+    if not isinstance(record, dict):
+        raise ValueError("Cache record must be an object")
     if (
         record.get("schema_version") != 1
         or record.get("run_id") != run_id
@@ -131,6 +133,8 @@ def cache_artifact(payload: bytes, run_id: int) -> dict:
     ):
         raise ValueError("Invalid cache record identity")
     for cache in record["caches"]:
+        if not isinstance(cache, dict):
+            raise ValueError("Cache observation must be an object")
         if not isinstance(cache.get("name"), str) or type(cache.get("hit")) not in (
             bool,
             type(None),
@@ -261,7 +265,9 @@ def job_records(snapshot: dict, rates: dict) -> list[dict]:
                     continue
                 seen.add(identity)
                 started = timestamp(job.get("started_at"))
-                if started is not None and started >= end:
+                queued = timestamp(job.get("created_at"))
+                observed_start = started or queued
+                if observed_start is not None and observed_start >= end:
                     continue
                 completed = timestamp(job.get("completed_at"))
                 skipped = job.get("conclusion") == "skipped"
@@ -270,7 +276,7 @@ def job_records(snapshot: dict, rates: dict) -> list[dict]:
                     if skipped
                     else elapsed(job.get("started_at"), job.get("completed_at"))
                 )
-                if completed is not None and completed >= end and not skipped:
+                if completed is not None and completed > end and not skipped:
                     seconds = None
                 minutes = math.ceil(seconds / 60) if seconds is not None else None
                 kind = runner_kind(job.get("labels", []))
@@ -377,6 +383,12 @@ def summarize(records: list[dict]) -> dict:
 
 def report(snapshot: dict, rates: dict) -> dict:
     records = job_records(snapshot, rates)
+    attempted_runs = defaultdict(set)
+    for record in records:
+        attempted_runs[(record["repository"], record["run_id"])].add(record["attempt"])
+    retried_runs = sum(
+        any(number > 1 for number in attempts) for attempts in attempted_runs.values()
+    )
     groups = {}
     for field in ("repository", "workflow", "job", "event"):
         buckets = defaultdict(list)
@@ -420,13 +432,8 @@ def report(snapshot: dict, rates: dict) -> dict:
         "rate_snapshot": rates,
         "summary": summarize(records),
         "runs": len(snapshot["runs"]),
-        "retried_runs": sum(
-            item["run"].get("run_attempt", 1) > 1 for item in snapshot["runs"]
-        ),
-        "retry_rate": sum(
-            item["run"].get("run_attempt", 1) > 1 for item in snapshot["runs"]
-        )
-        / len(snapshot["runs"])
+        "retried_runs": retried_runs,
+        "retry_rate": retried_runs / len(snapshot["runs"])
         if snapshot["runs"]
         else None,
         "cancelled_runs": sum(

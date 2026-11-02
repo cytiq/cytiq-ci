@@ -104,7 +104,8 @@ manifest list's digest, which is what deployments should pin.
 
 `enable_cache` defaults to `false`. When enabled, builds import `:cache-linux-amd64` or `:cache-linux-arm64`
 from the image's registry. Default-branch/tag pushes and merged PRs into the default branch export `mode=max`
-cache to the matching tag; other PRs do not write cache. A missing cache or failed cache export does not
+cache to the matching tag; manual publications from the default branch may also export. Other PRs do not write cache.
+A missing cache or failed cache export does not
 prevent a successful image publication. Build failures still fail the workflow.
 
 Registry cache contains build layers, including intermediate build stages. Treat it as private source material.
@@ -151,3 +152,7 @@ just security        # pinned zizmor: low-and-higher findings
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 See [the rollout guide](docs/ci-rollout.md) for required-check migration, runner experiments and rollback.
+
+The manual **Docker cache smoke test** checks empty/warm/changed-source cache reuse, both native architectures,
+SBOM/provenance, image contents and a deliberately failed cache export. It publishes a tiny private
+`ci-cache-smoke-<run-id>` package, never an application release or `latest` tag.
