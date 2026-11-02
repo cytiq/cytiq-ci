@@ -280,9 +280,20 @@ def job_records(snapshot: dict, rates: dict) -> list[dict]:
                     seconds = None
                 minutes = math.ceil(seconds / 60) if seconds is not None else None
                 kind = runner_kind(job.get("labels", []))
+                # Only GitHub's generated updater jobs are exempt. CI on a
+                # Dependabot pull request still consumes regular runner usage.
+                free_dependabot = (
+                    run["event"] == "dynamic"
+                    and run.get("path")
+                    in (
+                        "dynamic/dependabot/dependabot-updates",
+                        "dynamic/dependabot/update-graph",
+                    )
+                    and kind is not None
+                )
                 cost = (
                     0.0
-                    if skipped
+                    if skipped or free_dependabot
                     else round(minutes * rates["per_minute"][kind], 6)
                     if minutes is not None and kind is not None
                     else None
@@ -306,6 +317,9 @@ def job_records(snapshot: dict, rates: dict) -> list[dict]:
                         "duration_seconds": seconds,
                         "rounded_minutes": minutes,
                         "estimated_cost_usd": cost,
+                        "cost_exemption": "dependabot_standard_runner"
+                        if free_dependabot
+                        else None,
                         "queue_seconds": elapsed(
                             job.get("created_at"), job.get("started_at")
                         ),
@@ -356,6 +370,7 @@ def summarize(records: list[dict]) -> dict:
             record["rounded_minutes"] or 0 for record in records
         ),
         "estimated_cost_usd_known": round(sum(costs), 6),
+        "exempt_jobs": sum(record["cost_exemption"] is not None for record in records),
         "unknown_cost_jobs": len(records) - len(costs),
         "job_duration_p50_seconds": percentile(durations, 0.50),
         "job_duration_p95_seconds": percentile(durations, 0.95),
@@ -468,6 +483,7 @@ def markdown(data: dict) -> str:
         f"Status: {'complete' if data['complete'] else 'INCOMPLETE'}. Runs: {data['runs']}; retried: {data['retried_runs']}.",
         "",
         "Costs are list-price estimates, before included usage, credits and storage; they are not invoices.",
+        "GitHub-generated Dependabot jobs on recognized standard runners are free; their resource minutes remain included. CI on Dependabot PRs is priced normally.",
         "Known totals exclude missing data. PR latency includes queue/dependency wait and every job in the first attempt, not just required checks.",
         "Cache hits describe instrumented restores only; Rust reports exact matches. Missing telemetry is N/A.",
         "",

@@ -146,6 +146,9 @@ IDs. The UTC window selects runs by creation time; attempts beginning after its 
 Jobs still running at that boundary have unknown duration, not zero cost. Repositories with no Actions jobs
 remain visible. Cost uses the dated list-price snapshot in `config/runner-rates.json`, per-job minute rounding,
 and no allowances, credits or storage: compare actual charges with the billing export.
+GitHub-generated Dependabot update/graph jobs on recognized standard runners have zero estimated cost,
+while their resource minutes remain visible. Ordinary CI on Dependabot pull requests is priced normally.
+Unknown or larger runner labels remain N/A. See [GitHub's Dependabot runner billing rules](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions).
 
 The PR P50/P95 is first-attempt workflow latency including all jobs, queue and dependency waits. It is a useful
 proxy, not an exact measurement of required-check latency. Queue time is N/A when the API has no job creation
