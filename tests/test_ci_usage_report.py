@@ -135,6 +135,36 @@ class UsageTests(unittest.TestCase):
         data["runs"][0]["attempts"].append({"number": 2, "jobs": [later]})
         self.assertEqual(len(usage.job_records(data, RATES)), 1)
 
+    def test_dependabot_updaters_are_free_but_keep_resource_minutes(self):
+        for path in (
+            "dynamic/dependabot/dependabot-updates",
+            "dynamic/dependabot/update-graph",
+        ):
+            with self.subTest(path=path):
+                data = snapshot([job(1)])
+                data["runs"][0]["run"].update(event="dynamic", path=path)
+                result = usage.report(data, RATES)
+                self.assertEqual(result["summary"]["estimated_cost_usd_known"], 0)
+                self.assertEqual(result["summary"]["rounded_minutes_known"], 2)
+                self.assertEqual(result["summary"]["exempt_jobs"], 1)
+                self.assertEqual(result["jobs"][0]["duration_seconds"], 61)
+
+    def test_dependabot_prs_other_dynamic_jobs_and_unknown_runners_are_not_exempt(self):
+        cases = [
+            ("pull_request", ".github/workflows/ci.yml", ["ubuntu-24.04"], 0.012),
+            ("dynamic", "dynamic/other-service/job", ["ubuntu-24.04"], 0.012),
+            ("dynamic", "dynamic/dependabot/dependabot-updates", ["ubuntu-64"], None),
+        ]
+        for event, path, labels, cost in cases:
+            with self.subTest(event=event, path=path, labels=labels):
+                data = snapshot([job(1, labels=labels)])
+                data["runs"][0]["run"].update(
+                    event=event, path=path, actor={"login": "dependabot[bot]"}
+                )
+                result = usage.report(data, RATES)["jobs"][0]
+                self.assertEqual(result["estimated_cost_usd"], cost)
+                self.assertIsNone(result["cost_exemption"])
+
     def test_incomplete_api_collection_is_visible(self):
         class Forbidden:
             def json(self, *args, **kwargs):
