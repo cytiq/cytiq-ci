@@ -1,5 +1,5 @@
-## [0.1.0](https://github.com/cytiq/cytiq-ci/compare/0.0.1..0.1.0) - 2026-11-02
+## [0.2.0](https://github.com/cytiq/cytiq-ci/compare/0.1.0..0.2.0) - 2026-11-02
 
 ### ⛰️  Features
 
-- *(docker-publish)* Build linux/amd64 and linux/arm64 on native runners - ([fc9cb37](https://github.com/cytiq/cytiq-ci/commit/fc9cb373bf2670683241b73820acde5a8f9abee3))
+- *(ci)* Centralize cached QA and organization usage reports - ([dd7d1db](https://github.com/cytiq/cytiq-ci/commit/dd7d1dbdaf66e6292759fc2766a0fdf7679c0145))
