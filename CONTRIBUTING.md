@@ -8,7 +8,8 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
 ## Layout
 
 - `.github/workflows/python.yml`, `release.yml`, `docker-publish.yml`: the reusable workflows.
-- `.github/workflows/ci.yml`: this repository's own CI (actionlint).
+- `.github/workflows/ci.yml`: this repository's own CI (actionlint, zizmor, reporting tests).
+- `.github/workflows/ci-usage-report.yml`: weekly read-only organization usage report.
 - `release.yml` also triggers on this repository's own RC tags and changelog PRs, so `cytiq-ci` releases itself.
 - `scripts/gen-gpg-key.sh`: generates the release-signing key the `GPG_*` secrets hold.
 
@@ -33,7 +34,9 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
 
 ## Testing
 
-`just lint` runs actionlint locally. Workflows can't run in this repository: to test a change, push a branch and
+`just lint`, `just security` and `just test` run workflow lint, offline security checks and the Python 3.11+
+reporting tests. `scripts/install-actionlint.sh` and `scripts/install-zizmor.sh` install checksum-verified releases.
+Reusable workflows need a caller to test: push a branch and
 point a caller at it temporarily (`uses: cytiq/cytiq-ci/.github/workflows/<name>.yml@<branch>`), then switch the
 caller back to the released tag.
 

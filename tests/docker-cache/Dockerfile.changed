@@ -1,0 +1,2 @@
+FROM scratch
+COPY second.txt /marker

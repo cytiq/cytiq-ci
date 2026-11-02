@@ -6,42 +6,77 @@ on:
         description: "Directory with the project's justfile"
         type: string
         default: "."
-    secrets:
-      GH_TOKEN:
-        required: false
+      python_version:
+        description: "Python version compatible with the caller's lockfile"
+        type: string
+        required: true
+      uv_version:
+        description: "Exact uv version used to validate the caller's lockfile"
+        type: string
+        required: true
 permissions:
   contents: read
 
 jobs:
   ci:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ${{ inputs.workdir }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Configure git for private repos
-        env:
-          TOKEN: ${{ secrets.GH_TOKEN || github.token }}
-        run: git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      - uses: extractions/setup-just@v4
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
           just-version: 1.49.0
 
-      - name: Setup Python environment
+      - name: Set up uv
+        id: uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: ${{ inputs.uv_version }}
+          python-version: ${{ inputs.python_version }}
+          working-directory: ${{ inputs.workdir }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: python-${{ inputs.python_version }}-all-extras-dev
+          save-cache: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-extras --group dev
+
+      - name: Run project CI
+        env:
+          UV_NO_SYNC: "true"
+        run: just ci
+
+      # Telemetry is optional; a reporting failure must not change QA results.
+      - name: Record cache restore
+        if: always()
+        continue-on-error: true
+        env:
+          CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
         run: |
-          just install-uv
-          just create-env
-          just sync
-          just sync-dev
+          mkdir -p "$RUNNER_TEMP/ci-cache"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          hit = {"true": True, "false": False}.get(os.environ["CACHE_HIT"])
+          record = {"schema_version": 1, "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                    "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+                    "job": os.environ["GITHUB_JOB"], "caches": [{"name": "uv", "hit": hit}]}
+          (Path(os.environ["RUNNER_TEMP"]) / "ci-cache/cache.json").write_text(json.dumps(record))
+          PY
 
-      - name: Lint (ruff)
-        run: just lint
-
-      - name: Type checking (pyrefly)
-        run: just type
-
-      - name: Unit tests (pytest)
-        run: just tests-unit
+      - name: Upload cache telemetry
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ci-cache-${{ github.job }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-cache/cache.json
+          if-no-files-found: ignore
+          retention-days: 35

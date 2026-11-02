@@ -1,0 +1,102 @@
+name: Docker cache smoke test
+
+# Manual infrastructure validation, never an application release. A unique
+# private package per run gives a genuinely empty cache for the first build.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["ci-cache-smoke-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    permissions:
+      contents: read
+      packages: write
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+      startsWith(github.ref, 'refs/tags/ci-cache-smoke-')
+    # Both syntaxes bind reusable calls to this commit; actionlint 1.7.12 lacks $/ support.
+    uses: ./.github/workflows/docker-publish.yml # zizmor: ignore[self-repository]
+    with:
+      image: ci-cache-smoke-${{ github.run_id }}
+      version: cold
+      context: tests/docker-cache
+      dockerfile: tests/docker-cache/Dockerfile
+      enable_cache: true
+
+  warm:
+    permissions:
+      contents: read
+      packages: write
+    needs: cold
+    uses: ./.github/workflows/docker-publish.yml # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility
+    with:
+      image: ci-cache-smoke-${{ github.run_id }}
+      version: warm
+      context: tests/docker-cache
+      dockerfile: tests/docker-cache/Dockerfile
+      enable_cache: true
+
+  changed:
+    permissions:
+      contents: read
+      packages: write
+    needs: warm
+    uses: ./.github/workflows/docker-publish.yml # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility
+    with:
+      image: ci-cache-smoke-${{ github.run_id }}
+      version: changed
+      context: tests/docker-cache
+      dockerfile: tests/docker-cache/Dockerfile.changed
+      enable_cache: true
+
+  verify:
+    needs: [cold, warm, changed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ${{ needs.changed.outputs.image }}
+      CHANGED_DIGEST: ${{ needs.changed.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Verify platform manifests and attestations
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$CHANGED_DIGEST" --raw > "$RUNNER_TEMP/index.json"
+          jq -e '[.manifests[].platform.architecture] | index("amd64") != null and index("arm64") != null' "$RUNNER_TEMP/index.json"
+          docker buildx imagetools inspect "$IMAGE@$CHANGED_DIGEST" --format '{{json .SBOM}}' | jq -e 'length > 0'
+          docker buildx imagetools inspect "$IMAGE@$CHANGED_DIGEST" --format '{{json .Provenance}}' | jq -e 'length > 0'
+
+      - name: Verify cached and changed filesystem contents
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            for tag in cold warm changed; do
+              container=$(docker create --platform "$platform" "$IMAGE:$tag" /unused)
+              trap 'docker rm -f "$container" >/dev/null' EXIT
+              docker cp "$container:/marker" "$RUNNER_TEMP/marker"
+              if [ "$tag" = changed ]; then expected=second; else expected=first; fi
+              grep -Fx "$expected" "$RUNNER_TEMP/marker"
+              docker rm "$container"
+              trap - EXIT
+            done
+          done
+
+      - name: Verify a failed cache export is non-fatal
+        run: |
+          docker buildx build --progress plain \
+            --cache-to type=registry,ref=127.0.0.1:1/ignored-cache:test,mode=max,ignore-error=true \
+            --file tests/docker-cache/Dockerfile tests/docker-cache
