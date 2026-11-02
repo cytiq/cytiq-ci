@@ -14,6 +14,8 @@ import sys
 import time
 import zipfile
 from collections import defaultdict
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -137,8 +139,48 @@ def cache_artifact(payload: bytes, run_id: int) -> dict:
     return record
 
 
+def collect_run(api: GitHub, repository: str, run: dict) -> tuple[dict, list, list]:
+    item = {"repository": repository, "run": run, "attempts": [], "cache_records": []}
+    errors, warnings = [], []
+    for number in range(1, run.get("run_attempt", 1) + 1):
+        path = f"repos/{repository}/actions/runs/{run['id']}/attempts/{number}/jobs"
+        try:
+            item["attempts"].append(
+                {"number": number, "jobs": pages(api, path, "jobs")}
+            )
+        except (ApiError, KeyError, TypeError, ValueError) as error:
+            errors.append(f"{repository} run {run['id']}/{number}: {error}")
+    try:
+        artifacts = pages(
+            api, f"repos/{repository}/actions/runs/{run['id']}/artifacts", "artifacts"
+        )
+        for artifact in artifacts:
+            if not artifact["name"].startswith("ci-cache-") or artifact.get("expired"):
+                continue
+            if artifact["size_in_bytes"] > MAX_ARTIFACT_BYTES:
+                raise ValueError("Cache artifact is too large")
+            payload = api.read(
+                f"repos/{repository}/actions/artifacts/{artifact['id']}/zip"
+            )
+            item["cache_records"].append(cache_artifact(payload, run["id"]))
+    except (
+        ApiError,
+        KeyError,
+        TypeError,
+        ValueError,
+        zipfile.BadZipFile,
+        RuntimeError,
+    ) as error:
+        warnings.append(f"{repository} run {run['id']}: {error}")
+    return item, errors, warnings
+
+
 def collect(
-    api: GitHub, repositories: list[str], start: datetime, end: datetime
+    api: GitHub,
+    repositories: list[str],
+    start: datetime,
+    end: datetime,
+    checkpoint: Callable[[dict], None] | None = None,
 ) -> dict:
     snapshot = {
         "schema_version": 1,
@@ -146,60 +188,28 @@ def collect(
         "end_exclusive": iso(end),
         "collected_at": iso(datetime.now(UTC)),
         "repositories": repositories,
+        "pending_repositories": list(repositories),
         "runs": [],
         "errors": [],
         "cache_warnings": [],
     }
     for repository in repositories:
+        print(f"Collecting {repository}", file=sys.stderr)
         try:
             runs = runs_in_window(api, repository, start, end)
+            # Bounded parallel GETs keep weekly collection within its timeout.
+            # map retains API order, so snapshots remain deterministic.
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = pool.map(lambda run: collect_run(api, repository, run), runs)
+                for item, errors, warnings in results:
+                    snapshot["runs"].append(item)
+                    snapshot["errors"].extend(errors)
+                    snapshot["cache_warnings"].extend(warnings)
         except (ApiError, KeyError, TypeError, ValueError) as error:
             snapshot["errors"].append(f"{repository}: {error}")
-            continue
-        for run in runs:
-            item = {
-                "repository": repository,
-                "run": run,
-                "attempts": [],
-                "cache_records": [],
-            }
-            snapshot["runs"].append(item)
-            for number in range(1, run.get("run_attempt", 1) + 1):
-                path = f"repos/{repository}/actions/runs/{run['id']}/attempts/{number}/jobs"
-                try:
-                    jobs = pages(api, path, "jobs")
-                    item["attempts"].append({"number": number, "jobs": jobs})
-                except (ApiError, KeyError, TypeError, ValueError) as error:
-                    snapshot["errors"].append(
-                        f"{repository} run {run['id']}/{number}: {error}"
-                    )
-            try:
-                artifacts = pages(
-                    api,
-                    f"repos/{repository}/actions/runs/{run['id']}/artifacts",
-                    "artifacts",
-                )
-                for artifact in artifacts:
-                    if not artifact["name"].startswith("ci-cache-") or artifact.get(
-                        "expired"
-                    ):
-                        continue
-                    if artifact["size_in_bytes"] > MAX_ARTIFACT_BYTES:
-                        raise ValueError("Cache artifact is too large")
-                    payload = api.read(
-                        f"repos/{repository}/actions/artifacts/{artifact['id']}/zip"
-                    )
-                    item["cache_records"].append(cache_artifact(payload, run["id"]))
-            except (
-                ApiError,
-                KeyError,
-                TypeError,
-                ValueError,
-                zipfile.BadZipFile,
-            ) as error:
-                snapshot["cache_warnings"].append(
-                    f"{repository} run {run['id']}: {error}"
-                )
+        snapshot["pending_repositories"].remove(repository)
+        if checkpoint is not None:
+            checkpoint(snapshot)
     return snapshot
 
 
@@ -404,7 +414,7 @@ def report(snapshot: dict, rates: dict) -> dict:
         "schema_version": 1,
         "start": snapshot["start"],
         "end_exclusive": snapshot["end_exclusive"],
-        "complete": not snapshot["errors"],
+        "complete": not snapshot["errors"] and not snapshot.get("pending_repositories"),
         "errors": snapshot["errors"],
         "cache_warnings": snapshot["cache_warnings"],
         "rate_snapshot": rates,
@@ -553,14 +563,23 @@ def main() -> int:
     ):
         parser.error("Use a positive --days and cytiq/repository names")
     end = datetime.combine(arguments.end_date, datetime.min.time(), tzinfo=UTC)
+    rates = json.loads(arguments.rates.read_text())
+
+    def checkpoint(partial: dict) -> None:
+        write_reports(report(partial, rates), partial, arguments.output_dir)
+
     snapshot = (
         json.loads(arguments.snapshot.read_text())
         if arguments.snapshot
         else collect(
-            GitHub(), arguments.repositories, end - timedelta(days=arguments.days), end
+            GitHub(),
+            arguments.repositories,
+            end - timedelta(days=arguments.days),
+            end,
+            checkpoint=checkpoint,
         )
     )
-    result = report(snapshot, json.loads(arguments.rates.read_text()))
+    result = report(snapshot, rates)
     write_reports(result, snapshot, arguments.output_dir)
     print(
         f"Wrote {arguments.output_dir}/report.md ({'complete' if result['complete'] else 'INCOMPLETE'})"

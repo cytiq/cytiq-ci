@@ -59,6 +59,29 @@ def snapshot(jobs, attempts=1):
 
 
 class UsageTests(unittest.TestCase):
+    def test_collector_reads_each_attempt_and_checkpoints_incomplete_progress(self):
+        source = snapshot([job(1)], attempts=2)["runs"][0]["run"]
+
+        class API:
+            def json(self, path, **params):
+                if path.endswith("/runs"):
+                    return {"total_count": 1, "workflow_runs": [source]}
+                if path.endswith("/artifacts"):
+                    return {"artifacts": []}
+                return {"jobs": [job(2 if "/attempts/2/" in path else 1)]}
+
+        checkpoints = []
+        data = usage.collect(
+            API(),
+            ["cytiq/cytiq-cli", "cytiq/cytiq-tree"],
+            datetime(2026, 10, 4, tzinfo=UTC),
+            datetime(2026, 11, 3, tzinfo=UTC),
+            checkpoint=lambda value: checkpoints.append(usage.report(value, RATES)),
+        )
+        self.assertFalse(checkpoints[0]["complete"])
+        self.assertTrue(checkpoints[-1]["complete"])
+        self.assertEqual(usage.report(data, RATES)["summary"]["jobs"], 4)
+
     def test_rounds_each_job_instead_of_workflow_wall_time(self):
         data = usage.report(snapshot([job(1), job(2)]), RATES)
         self.assertEqual(data["summary"]["rounded_minutes_known"], 4)

@@ -34,10 +34,11 @@ the two labels. Do not use slim for Docker, Rust compilation or ML QA.
 Keep ten-minute timeouts for lightweight jobs. Slim has minimal software, no privileged Docker and a 15-minute
 maximum. An unavailable command is a failed compatibility trial, not a reason to silently skip validation.
 
-The CLI manual Rust benchmark has separate cache namespaces for sequential, quality and test jobs. Run at the
-same SHA/toolchain on a cold key and again on its warm key. Compare summed runner-minutes and workflow latency,
-including setup/cache transfer; clippy and test artifacts are not guaranteed to share all compiled output.
-Never let a benchmark overwrite production caches or change required-check names.
+The CLI manual Rust benchmark uses separate ephemeral target directories for sequential, quality and test jobs.
+Each measures cold and warm Cargo invocations at the same SHA/toolchain. It never uploads build caches: extra
+target caches previously evicted main's cache at the repository limit. Compare summed job durations and setup
+overhead as well as phase timings. These warm results measure local incremental compilation, not remote cache
+transfer. Clippy and test artifacts need not share all compiled output. Required-check names stay unchanged.
 
 For Docker compare empty/warm registry cache and a real source change, on both native architectures. Verify
 the manifest digest, SBOM/provenance, `--help` and CatBoost/LightGBM inference. Export failure must not prevent
