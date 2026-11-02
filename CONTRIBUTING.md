@@ -19,15 +19,16 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
   ignored `artifacts`, `update_changelog` and `cleanup_rc_tags`.
 - `release.yml` also bumps `Cargo.toml`, and updates lockfiles with `uv lock`, `cargo update --workspace` and
   `bun install --lockfile-only` rather than the caller's `just lock`, which may upgrade every dependency.
-- `docker-publish.yml` takes `ref`, `build_args` and `platforms`, pushes SBOM and provenance attestations, and
-  returns the pushed `digest`.
+- `docker-publish.yml` takes `ref`, `build_args` and `platforms`, builds each platform on a native runner
+  (`ubuntu-24.04-arm` for arm64) and merges them into one manifest list, pushes SBOM and provenance attestations,
+  and returns the manifest list's `digest`.
 
 ## Conventions
 
 - Each workflow uses `workflow_call` with typed inputs and optional secrets, and declares minimal `permissions`.
 - Pass expressions to shell steps through `env`, not inline in `run:`.
 - Inputs use `snake_case`; YAML uses 2-space indentation and the `.yml` extension.
-- Callers pin a tag (`@0.0.1`). A change to an input or secret is a breaking change for callers; release it as a new
+- Callers pin a tag (`@0.1.0`). A change to an input or secret is a breaking change for callers; release it as a new
   version and note it in the PR.
 
 ## Testing

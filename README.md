@@ -8,14 +8,14 @@ Reusable GitHub Actions workflows for CI/CD across the `cytiq` repositories.
 |---|---|
 | `python.yml` | Python CI: lint, type check and unit tests through the repository's `just` recipes |
 | `release.yml` | Release flow: an RC tag opens a changelog PR; merging it creates a signed tag and a GitHub Release |
-| `docker-publish.yml` | Build and push an image to GHCR with SBOM and provenance attestations; outputs the digest |
+| `docker-publish.yml` | Build and push a `linux/amd64` + `linux/arm64` image to GHCR with SBOM and provenance attestations; outputs the digest |
 
 Pin a tag, never a branch:
 
 ```yaml
 jobs:
   qa:
-    uses: cytiq/cytiq-ci/.github/workflows/python.yml@0.0.1
+    uses: cytiq/cytiq-ci/.github/workflows/python.yml@0.1.0
     with:
       workdir: "."
     secrets: inherit
@@ -41,7 +41,7 @@ on:
 jobs:
   changelog:
     if: github.event_name == 'push'
-    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.0.1
+    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.1.0
     with:
       tag: ${{ github.ref_name }}
       update_changelog: true
@@ -52,7 +52,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'chore/update-changelog-')
-    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.0.1
+    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.1.0
     with:
       tag: ${{ github.event.pull_request.head.ref }}
       update_changelog: false
@@ -73,7 +73,7 @@ that can push to `main` and whose PRs trigger workflows (the default `GITHUB_TOK
 
 ```yaml
   build-and-push:
-    uses: cytiq/cytiq-ci/.github/workflows/docker-publish.yml@0.0.1
+    uses: cytiq/cytiq-ci/.github/workflows/docker-publish.yml@0.1.0
     with:
       image: cytiq-cli
       dockerfile: docker/Dockerfile
@@ -87,8 +87,11 @@ that can push to `main` and whose PRs trigger workflows (the default `GITHUB_TOK
       packages: write
 ```
 
-Pushes `ghcr.io/<org>/<image>:<version>` (and `:latest`), with an SBOM and `mode=max` provenance attached.
-`platforms` defaults to `linux/amd64`. The `digest` output is what deployments should pin.
+Pushes `ghcr.io/<org>/<image>:<version>` (and `:latest`) as one multi-platform manifest list, with an SBOM and
+`mode=max` provenance attached to each platform. `platforms` defaults to `linux/amd64,linux/arm64`. Each platform
+builds natively on its own GitHub-hosted runner (`ubuntu-24.04` or `ubuntu-24.04-arm`, no QEMU) and is pushed by
+digest; a final job tags the manifest list over them. Other platforms are rejected. The `digest` output is the
+manifest list's digest, which is what deployments should pin.
 
 ## Development
 
