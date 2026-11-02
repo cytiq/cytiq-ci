@@ -2,6 +2,9 @@
 
 ## Order
 
+Grant Dependabot access to the private `cytiq-ci` repository before expecting automatic reusable-workflow
+updates. This is separate from Actions workflow access; keep the organization's default access unchanged.
+
 1. Run actionlint, zizmor and the usage-report tests. Collect a baseline with authenticated `gh`; keep the snapshot
    private. Do not publish the report in a public issue or repository.
 2. Validate the shared workflow from a feature branch or immutable commit in a caller. Publish `0.2.0` through the

@@ -49,7 +49,7 @@ on:
 jobs:
   changelog:
     if: github.event_name == 'push'
-    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.1.0
+    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.2.0
     with:
       tag: ${{ github.ref_name }}
       update_changelog: true
@@ -60,7 +60,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'chore/update-changelog-')
-    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.1.0
+    uses: cytiq/cytiq-ci/.github/workflows/release.yml@0.2.0
     with:
       tag: ${{ github.event.pull_request.head.ref }}
       update_changelog: false
@@ -111,6 +111,18 @@ prevent a successful image publication. Build failures still fail the workflow.
 Registry cache contains build layers, including intermediate build stages. Treat it as private source material.
 It does not export Cargo cache mounts. In particular, changing source files or `CYTIQ_BUILD_COMMIT` can still
 invalidate the compiler layer. Measure repeated and changed-source builds before adding cargo-chef or sccache.
+
+## Dependabot access to private workflows
+
+Automatic Actions updates need a separate organization-level Dependabot grant to read `cytiq/cytiq-ci`.
+In the organization's security settings, add only `cytiq-ci` to the private repositories Dependabot may access;
+keep the default repository access level unchanged. The Actions setting that allows organization repositories
+to call reusable workflows does not grant Dependabot this access.
+
+Without the grant, Actions updates report `git_dependencies_not_reachable` for this repository even though CI
+itself passes. Do not work around this by passing a broad token to Python QA or disabling update checks.
+See [GitHub's repository-access API](https://docs.github.com/en/rest/dependabot/repository-access) for the
+administrative endpoint and required permissions. This grant is independent of the read-only metrics token.
 
 ## Usage reporting
 

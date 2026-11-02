@@ -29,7 +29,7 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
 - Each workflow uses `workflow_call` with typed inputs and optional secrets, and declares minimal `permissions`.
 - Pass expressions to shell steps through `env`, not inline in `run:`.
 - Inputs use `snake_case`; YAML uses 2-space indentation and the `.yml` extension.
-- Callers pin a tag (`@0.1.0`). A change to an input or secret is a breaking change for callers; release it as a new
+- Callers pin a tag (`@0.2.0`). A change to an input or secret is a breaking change for callers; release it as a new
   version and note it in the PR.
 
 ## Testing
