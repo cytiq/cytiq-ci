@@ -1,5 +1,5 @@
-## [0.0.1] - 2026-11-01
+## [0.1.0](https://github.com/cytiq/cytiq-ci/compare/0.0.1..0.1.0) - 2026-11-02
 
 ### ⛰️  Features
 
-- Add reusable python, release and docker-publish workflows - ([77d8a32](https://github.com/cytiq/cytiq-ci/commit/77d8a323eb592a5994ba009ea158e18c846dffa9))
+- *(docker-publish)* Build linux/amd64 and linux/arm64 on native runners - ([fc9cb37](https://github.com/cytiq/cytiq-ci/commit/fc9cb373bf2670683241b73820acde5a8f9abee3))
