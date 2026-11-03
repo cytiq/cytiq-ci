@@ -215,11 +215,16 @@ jobs:
         if: steps.version.outputs.bun == 'true'
         run: bun install --lockfile-only
 
+      # The action commits as github-actions[bot] unless told otherwise, and
+      # GitHub only verifies a signature whose committer email belongs to the
+      # account that registered the signing key (otherwise: unknown_key).
       - name: Create changelog pull request
         if: steps.vars.outputs.is_changelog_run == 'true'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.GH_TOKEN || github.token }}
+          committer: ${{ env.GIT_USER_NAME }} <${{ env.GIT_USER_EMAIL }}>
+          author: ${{ env.GIT_USER_NAME }} <${{ env.GIT_USER_EMAIL }}>
           commit-message: "chore(release): update changelog for ${{ steps.vars.outputs.tag }}"
           title: "chore(release): update changelog for ${{ steps.vars.outputs.tag }}"
           body: |
