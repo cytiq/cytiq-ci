@@ -14,6 +14,10 @@ on:
         description: "Exact uv version used to validate the caller's lockfile"
         type: string
         required: true
+    secrets:
+      DEPS_TOKEN:
+        description: "Read-only token for private git dependencies on github.com (used by `uv sync` only)"
+        required: false
 permissions:
   contents: read
 
@@ -45,8 +49,21 @@ jobs:
           cache-suffix: python-${{ inputs.python_version }}-all-extras-dev
           save-cache: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
+      # A private git dependency (e.g. cytiq-db) authenticates through a credential helper that only this step's
+      # git sees: nothing is written to ~/.gitconfig, the token is never part of a URL, and `just ci` runs without it.
       - name: Install locked dependencies
-        run: uv sync --locked --all-extras --group dev
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: |
+          if [ -n "${DEPS_TOKEN}" ]; then
+            # An empty helper first resets the list, so no other configured helper answers for github.com.
+            export GIT_CONFIG_COUNT=2
+            export GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0=
+            export GIT_CONFIG_KEY_1=credential.https://github.com.helper
+            # shellcheck disable=SC2016 # expanded by the helper's shell when git asks, not here
+            export GIT_CONFIG_VALUE_1='!f() { test "$1" = get || return 0; echo username=x-access-token; echo "password=${DEPS_TOKEN}"; }; f'
+          fi
+          uv sync --locked --all-extras --group dev
 
       - name: Run project CI
         env:
