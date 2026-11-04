@@ -29,8 +29,25 @@ Installs the exact `uv_version` and selected `python_version`, restores the uv d
 the cache. It then runs `just ci` with `UV_NO_SYNC=true`, so project commands reuse that environment.
 
 Callers provide a non-mutating `ci` recipe containing their existing checks, fixtures and test selection.
-There is no private-dependency token or global Git configuration. Fetch private reference repositories with
-an explicit checkout and a repository-scoped read token in the caller instead.
+
+Private git dependencies on github.com (e.g. `cytiq-db = { git = "https://github.com/cytiq/cytiq-db.git", tag =
+"0.1.0" }`) need the optional `DEPS_TOKEN` secret, a read-only token for those repositories. Only the `uv sync`
+step sees it, through a credential helper set in that step's environment: nothing is written to `~/.gitconfig`,
+no URL is rewritten or carries the token, and `just ci` runs without it. There is still no global Git
+configuration. Fetch private reference repositories (data, not dependencies) with an explicit checkout and a
+repository-scoped read token in the caller.
+
+```yaml
+jobs:
+  qa:
+    uses: cytiq/cytiq-ci/.github/workflows/python.yml@0.3.0
+    with:
+      workdir: "."
+      python_version: "3.13"
+      uv_version: "0.9.8"
+    secrets:
+      DEPS_TOKEN: ${{ secrets.CYTIQ_DEPS_TOKEN }}
+```
 
 Optional `ci-cache-*` artifacts record uv restore hits for 35 days; missing telemetry does not change QA results.
 

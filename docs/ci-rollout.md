@@ -57,7 +57,8 @@ the candidate as an experiment; do not claim savings.
 
 Roll back a lightweight runner trial by removing/resetting `CI_LIGHT_RUNNER`. Disable Docker cache with
 `enable_cache: false`. Roll back a reusable Python caller only together with its matching required-check
-contexts and legacy recipe contract. The old released tags stay available. Never restore global token rewrites.
+contexts and legacy recipe contract. The old released tags stay available. Never restore global token rewrites; private git dependencies use
+`python.yml`'s `DEPS_TOKEN`, which only the `uv sync` step's git sees.
 
 Set the read-only `CI_METRICS_TOKEN` before enabling regular weekly collection. Review missing data explicitly.
 Account for artifact/cache storage separately from list-price runner estimates. Keep only the two active
