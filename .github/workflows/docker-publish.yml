@@ -8,7 +8,7 @@ on:
   workflow_call:
     inputs:
       image:
-        description: "Image name, without registry/org prefix (e.g. cytiq-cli)"
+        description: "Image name, without registry/org prefix (e.g. cytiq-engine)"
         type: string
         required: true
       version:
@@ -56,7 +56,7 @@ on:
         required: false
     outputs:
       image:
-        description: "Full image name without a tag (e.g. ghcr.io/cytiq/cytiq-cli)"
+        description: "Full image name without a tag (e.g. ghcr.io/cytiq/cytiq-engine)"
         value: ${{ jobs.prepare.outputs.image }}
       digest:
         description: "Digest of the pushed manifest list (sha256:...); pin deployments to image@digest"

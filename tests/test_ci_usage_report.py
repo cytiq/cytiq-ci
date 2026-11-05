@@ -37,12 +37,12 @@ def snapshot(jobs, attempts=1):
         "schema_version": 1,
         "start": "2026-10-04T00:00:00Z",
         "end_exclusive": "2026-11-03T00:00:00Z",
-        "repositories": ["cytiq/cytiq-cli", "cytiq/cytiq-web"],
+        "repositories": ["cytiq/cytiq-engine", "cytiq/cytiq-web"],
         "errors": [],
         "cache_warnings": [],
         "runs": [
             {
-                "repository": "cytiq/cytiq-cli",
+                "repository": "cytiq/cytiq-engine",
                 "run": {
                     "id": 42,
                     "name": "CI",
@@ -73,7 +73,7 @@ class UsageTests(unittest.TestCase):
         checkpoints = []
         data = usage.collect(
             API(),
-            ["cytiq/cytiq-cli", "cytiq/cytiq-tree"],
+            ["cytiq/cytiq-engine", "cytiq/cytiq-tree"],
             datetime(2026, 10, 4, tzinfo=UTC),
             datetime(2026, 11, 3, tzinfo=UTC),
             checkpoint=lambda value: checkpoints.append(usage.report(value, RATES)),
@@ -88,7 +88,7 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(data["summary"]["estimated_cost_usd_known"], 0.024)
         self.assertEqual(data["summary"]["runner_minutes_known"], 2.033)
         self.assertEqual(
-            data["pr_workflow_latency"]["cytiq/cytiq-cli"]["p95_seconds"], 71
+            data["pr_workflow_latency"]["cytiq/cytiq-engine"]["p95_seconds"], 71
         )
         self.assertEqual(data["groups"]["repository"]["cytiq/cytiq-web"]["jobs"], 0)
 
@@ -174,7 +174,7 @@ class UsageTests(unittest.TestCase):
             datetime(2026, 10, 4, tzinfo=UTC),
             datetime(2026, 11, 3, tzinfo=UTC),
         )
-        data = usage.collect(Forbidden(), ["cytiq/cytiq-cli"], start, end)
+        data = usage.collect(Forbidden(), ["cytiq/cytiq-engine"], start, end)
         report = usage.report(data, RATES)
         self.assertFalse(report["complete"])
         self.assertIn("INCOMPLETE", usage.markdown(report))
@@ -204,7 +204,7 @@ class UsageTests(unittest.TestCase):
         api = ManyRuns()
         result = usage.runs_in_window(
             api,
-            "cytiq/cytiq-cli",
+            "cytiq/cytiq-engine",
             datetime(2026, 11, 1, tzinfo=UTC),
             datetime(2026, 11, 2, tzinfo=UTC),
         )
@@ -258,7 +258,7 @@ class UsageTests(unittest.TestCase):
         )
         with patch.object(usage.subprocess, "run", return_value=response) as request:
             with self.assertRaises(usage.ApiError) as failure:
-                usage.GitHub().read("repos/cytiq/cytiq-cli/actions/runs")
+                usage.GitHub().read("repos/cytiq/cytiq-engine/actions/runs")
         self.assertEqual(request.call_count, 1)
         self.assertNotIn("secret-value", str(failure.exception))
 
