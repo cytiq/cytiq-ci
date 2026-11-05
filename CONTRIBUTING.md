@@ -20,6 +20,8 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
   ignored `artifacts`, `update_changelog` and `cleanup_rc_tags`.
 - `release.yml` also bumps `Cargo.toml`, and updates lockfiles with `uv lock`, `cargo update --workspace` and
   `bun install --lockfile-only` rather than the caller's `just lock`, which may upgrade every dependency.
+  Path dependencies in tracked `Cargo.toml` files that require the previous version move with it; otherwise a
+  minor or major bump leaves their range and `cargo update --workspace` fails before the PR opens.
 - `docker-publish.yml` takes `ref`, `build_args` and `platforms`, builds each platform on a native runner
   (`ubuntu-24.04-arm` for arm64) and merges them into one manifest list, pushes SBOM and provenance attestations,
   and returns the manifest list's `digest`.
