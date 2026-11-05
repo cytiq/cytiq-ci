@@ -1,15 +1,10 @@
-## [0.3.0](https://github.com/cytiq/cytiq-ci/compare/0.2.0..0.3.0) - 2026-11-04
-
-### ⛰️  Features
-
-- *(python)* Accept a read-only token for private git dependencies ([#20](https://github.com/cytiq/cytiq-ci/issues/20)) - ([4b17848](https://github.com/cytiq/cytiq-ci/commit/4b17848edaafc54208a499ca8082fdef5648f9c8))
+## [0.4.0](https://github.com/cytiq/cytiq-ci/compare/0.3.0..0.4.0) - 2026-11-05
 
 ### 🐛 Bug Fixes
 
-- *(ci)* Wait for CI before Dependabot merges - ([4bce79a](https://github.com/cytiq/cytiq-ci/commit/4bce79a3552f6d23a8118bde18188056ba0351b2))
-- *(metrics)* Exclude free Dependabot jobs from cost estimates - ([8f679af](https://github.com/cytiq/cytiq-ci/commit/8f679af401594d92988af30d1e8f231eeda1b46f))
-- *(release)* Commit the changelog as the signing key's owner - ([50dc238](https://github.com/cytiq/cytiq-ci/commit/50dc2381c077dc5af5419041c27d649b57a7f456))
+- *(release)* Move workspace path-dependency versions with the release ([#24](https://github.com/cytiq/cytiq-ci/issues/24)) - ([f1815f7](https://github.com/cytiq/cytiq-ci/commit/f1815f7cce5e12bb92d6e7f63fa568ed263f7cca))
 
-### 📚 Documentation
+### ⚙️ Miscellaneous Tasks
 
-- *(ci)* Explain private workflow update access - ([107f0af](https://github.com/cytiq/cytiq-ci/commit/107f0afb77c656885e3ff592e9c49986b5f77b1d))
+- *(skills)* Add Pierre trees and diffs for Codex and Claude ([#22](https://github.com/cytiq/cytiq-ci/issues/22)) - ([2ade8fa](https://github.com/cytiq/cytiq-ci/commit/2ade8fafb731d749fc2684259c3129953b979dfa))
+- Update cytiq-engine references ([#23](https://github.com/cytiq/cytiq-ci/issues/23)) - ([f9c3c8e](https://github.com/cytiq/cytiq-ci/commit/f9c3c8e71277eae658d6984e56be94f12614a00e))

@@ -1,4 +1,14 @@
 # Changelog
+## [0.4.0](https://github.com/cytiq/cytiq-ci/compare/0.3.0..0.4.0) - 2026-11-05
+
+### 🐛 Bug Fixes
+
+- *(release)* Move workspace path-dependency versions with the release ([#24](https://github.com/cytiq/cytiq-ci/issues/24)) - ([f1815f7](https://github.com/cytiq/cytiq-ci/commit/f1815f7cce5e12bb92d6e7f63fa568ed263f7cca))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(skills)* Add Pierre trees and diffs for Codex and Claude ([#22](https://github.com/cytiq/cytiq-ci/issues/22)) - ([2ade8fa](https://github.com/cytiq/cytiq-ci/commit/2ade8fafb731d749fc2684259c3129953b979dfa))
+- Update cytiq-engine references ([#23](https://github.com/cytiq/cytiq-ci/issues/23)) - ([f9c3c8e](https://github.com/cytiq/cytiq-ci/commit/f9c3c8e71277eae658d6984e56be94f12614a00e))
 ## [0.3.0](https://github.com/cytiq/cytiq-ci/compare/0.2.0..0.3.0) - 2026-11-04
 
 ### ⛰️  Features
@@ -14,6 +24,10 @@
 ### 📚 Documentation
 
 - *(ci)* Explain private workflow update access - ([107f0af](https://github.com/cytiq/cytiq-ci/commit/107f0afb77c656885e3ff592e9c49986b5f77b1d))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Update changelog for 0.3.0 ([#21](https://github.com/cytiq/cytiq-ci/issues/21)) - ([d6db8dd](https://github.com/cytiq/cytiq-ci/commit/d6db8dd8a8ff34284b305b90012a2127428e96c6))
 ## [0.2.0](https://github.com/cytiq/cytiq-ci/compare/0.1.0..0.2.0) - 2026-11-02
 
 ### ⛰️  Features
