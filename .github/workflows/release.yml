@@ -171,9 +171,24 @@ jobs:
           fi
 
           if [[ -f Cargo.toml ]] && grep -q '^version = ' Cargo.toml; then
+            previous=$(sed -n '0,/^version = /s/^version = "\([^"]*\)".*/\1/p' Cargo.toml)
             echo "Updating version in Cargo.toml to $VERSION"
             sed -i "0,/^version = .*/s//version = \"$VERSION\"/" Cargo.toml
             add_path Cargo.toml
+            # Workspace crates published to crates.io depend on each other by
+            # path and version (`{ path = "...", version = "X.Y.Z" }`). Move
+            # requirements on the previous version along, or `cargo update`
+            # cannot resolve them once a minor or major bump leaves their range.
+            if [[ -n "$previous" && "$previous" != "$VERSION" ]]; then
+              pattern=${previous//./\\.}
+              while IFS= read -r -d '' manifest; do
+                sed -i -E "/path *= *\"/s/(version *= *\"[=^~]?)$pattern\"/\1$VERSION\"/" "$manifest"
+                if [[ "$manifest" != Cargo.toml ]] && ! git diff --quiet -- "$manifest"; then
+                  echo "Updating workspace dependency versions in $manifest"
+                  add_path "$manifest"
+                fi
+              done < <(git ls-files -z -- Cargo.toml '*/Cargo.toml')
+            fi
             [[ -f Cargo.lock ]] && { add_path Cargo.lock; echo "cargo=true" >> "$GITHUB_OUTPUT"; }
           fi
 

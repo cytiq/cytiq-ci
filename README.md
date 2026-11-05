@@ -87,7 +87,9 @@ jobs:
 
 1. Pushing `X.Y.Z-rcN` generates `CHANGELOG.md` and `RELEASE_NOTES.md` with git-cliff (the caller needs a
    `cliff.toml`), sets the version in `pyproject.toml`, `Cargo.toml` and/or `package.json`, updates the matching
-   lockfile without upgrading anything, and opens `chore/update-changelog-X.Y.Z`.
+   lockfile without upgrading anything, and opens `chore/update-changelog-X.Y.Z`. In `Cargo.toml` files it also
+   moves path dependencies that require the previous version (`{ path = "...", version = "X.Y.Z" }`, the form
+   crates.io needs between workspace crates) to the new one.
 2. Merging that PR pushes a GPG-signed `X.Y.Z` tag, creates the GitHub Release (attaching `artifacts` globs, if
    given) and, with `cleanup_rc_tags`, deletes the `X.Y.Z-rc*` tags.
 
