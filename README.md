@@ -100,7 +100,7 @@ that can push to `main` and whose PRs trigger workflows (the default `GITHUB_TOK
   build-and-push:
     uses: cytiq/cytiq-ci/.github/workflows/docker-publish.yml@0.2.0
     with:
-      image: cytiq-cli
+      image: cytiq-engine
       dockerfile: docker/Dockerfile
       version: 1.2.3
       latest: true
