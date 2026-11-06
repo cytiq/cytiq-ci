@@ -1,0 +1,139 @@
+name: Set up mise tools
+description: >-
+  Installs the just release pinned in the caller's mise.toml, runs the caller's
+  `just mise` recipe to install mise and the job's tools from mise.lock, and
+  puts those tools and the mise.toml environment on later steps.
+  The caller's justfile must define the `mise` recipe and the `MISE` variable
+  (the path of the mise binary that recipe installs).
+
+inputs:
+  tools:
+    description: >-
+      Comma-separated mise.toml tools the job uses, such as `rust,python`
+      (MISE_ENABLE_TOOLS). Later `just` and `mise exec` calls in the job see only
+      these, so they never install the others. Empty: every configured tool.
+    required: false
+    default: ""
+  working-directory:
+    description: "Directory with mise.toml, mise.lock and the justfile"
+    required: false
+    default: "."
+  cache:
+    description: "Whether to restore and save installed tools through the Actions cache; false for publishing jobs"
+    required: false
+    default: "true"
+
+outputs:
+  cache-hit:
+    description: "Whether the installed tools were restored from an exact cache match"
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read the mise configuration
+      id: config
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        if [[ ! "$TOOLS" =~ ^[A-Za-z0-9:/@._,-]*$ ]]; then
+          echo "::error::tools must be a comma-separated list of mise tool names"
+          exit 1
+        fi
+        python3 - <<'PY'
+        import hashlib, os, tomllib
+        from pathlib import Path
+
+        just = tomllib.loads(Path("mise.toml").read_text())["tools"].get("just")
+        if not isinstance(just, str):
+            raise SystemExit("::error::mise.toml must pin just as an exact version string")
+        digest = hashlib.sha256(os.environ["TOOLS"].encode())
+        for name in ("mise.toml", "mise.lock"):
+            digest.update(Path(name).read_bytes())
+        data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            print(f"just={just}", file=output)
+            print(f"hash={digest.hexdigest()[:32]}", file=output)
+            print(f"installs={os.path.join(data, 'mise', 'installs')}", file=output)
+        PY
+
+    - name: Install just
+      uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      with:
+        # The exact version the caller's mise.toml pins.
+        just-version: ${{ steps.config.outputs.just }} # zizmor: ignore[unpinned-tools]
+
+    - name: Locate mise
+      id: paths
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: echo "mise=$(just --evaluate MISE)" >> "$GITHUB_OUTPUT"
+
+    # Rust toolchains live in rustup's home and are reinstalled on each run;
+    # caching mise's link to one would leave it pointing at nothing.
+    - name: Restore mise tools
+      id: restore
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.paths.outputs.mise }}
+          ${{ steps.config.outputs.installs }}
+          !${{ steps.config.outputs.installs }}/rust
+        key: mise-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.config.outputs.hash }}
+
+    - name: Install mise and the job's tools
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TOOLS: ${{ inputs.tools }}
+        # Avoids the shared anonymous GitHub API limit of hosted runners.
+        GITHUB_TOKEN: ${{ github.token }}
+      # TOOLS passed the tool-name pattern above, so it cannot add a line to GITHUB_ENV.
+      run: | # zizmor: ignore[github-env]
+        if [ -n "$TOOLS" ]; then
+          export MISE_ENABLE_TOOLS="$TOOLS"
+          echo "MISE_ENABLE_TOOLS=$TOOLS" >> "$GITHUB_ENV"
+        fi
+        just mise
+
+    # Pull requests read the cache but never write it, as in the callers' Cargo
+    # and uv caches.
+    - name: Save mise tools
+      if: inputs.cache == 'true' && github.event_name != 'pull_request' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.paths.outputs.mise }}
+          ${{ steps.config.outputs.installs }}
+          !${{ steps.config.outputs.installs }}/rust
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
+    - name: Expose the tools to later steps
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MISE: ${{ steps.paths.outputs.mise }}
+      run: |
+        "$MISE" env --json > "$RUNNER_TEMP/mise-env.json"
+        "$MISE" bin-paths > "$RUNNER_TEMP/mise-bin-paths.txt"
+        python3 - "$RUNNER_TEMP/mise-env.json" "$RUNNER_TEMP/mise-bin-paths.txt" <<'PY'
+        import json, os, sys, uuid
+        from pathlib import Path
+
+        variables = json.loads(Path(sys.argv[1]).read_text())
+        with open(os.environ["GITHUB_ENV"], "a") as env:
+            for name, value in variables.items():
+                if name == "PATH":
+                    continue
+                delimiter = f"MISE_{uuid.uuid4().hex}"
+                env.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+        # Each GITHUB_PATH line is prepended, so the first tool must come last.
+        paths = [os.path.dirname(os.environ["MISE"])]
+        paths += Path(sys.argv[2]).read_text().splitlines()
+        with open(os.environ["GITHUB_PATH"], "a") as path:
+            for directory in reversed([p for p in paths if p]):
+                path.write(f"{directory}\n")
+        PY

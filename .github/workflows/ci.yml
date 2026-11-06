@@ -31,10 +31,11 @@ jobs:
         with:
           persist-credentials: false
 
+      # The action at this revision, so a change to it is validated here first.
       - name: Install pinned validation tools
-        run: |
-          bash scripts/install-actionlint.sh
-          bash scripts/install-zizmor.sh
+        uses: ./.github/actions/mise # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility
+        with:
+          tools: python,actionlint,zizmor
 
       - name: Run actionlint
         run: actionlint -color

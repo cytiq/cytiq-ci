@@ -1,0 +1,19 @@
+# Development and CI tools, installed by `just mise` (see CONTRIBUTING.md).
+# Versions are exact; mise.lock records the download and checksum of each one.
+# Change a version here, then run `"$(just --evaluate MISE)" lock` and commit both files.
+
+# The mise release `just mise` installs; older releases refuse this file.
+min_version = "2026.11.2"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
+
+[tools]
+just = "1.49.0"
+# Reporting tests and the usage report support Python 3.11+.
+python = "3.11.14"
+actionlint = "1.7.12"
+zizmor = "1.31.1"
+# `just usage-report` reads the Actions API through gh.
+gh = "2.103.3"
