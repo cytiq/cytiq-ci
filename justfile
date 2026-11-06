@@ -2,17 +2,49 @@
 # -----------------------------------------------------------------------------
 # Global settings for just
 
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+# Recipes run with the tools pinned in mise.toml, through the mise release that
+# `just mise` installs outside PATH. `mise-cytiq` links to it and exists nowhere
+# else, so a recipe fails rather than run another mise on PATH.
+set shell := ["mise-cytiq", "exec", "--", "bash", "-eu", "-o", "pipefail", "-c"]
 
-# ---- Install the pinned, checksum-verified actionlint release
+MISE_VERSION := replace_regex(read(justfile_directory() / "mise.toml"), '(?sm)\A.*?^min_version = "([^"]+)"$.*\z', '$1')
+MISE_DIR := env("XDG_DATA_HOME", home_directory() / ".local/share") / "cytiq/mise" / MISE_VERSION
+MISE := MISE_DIR / "mise"
+export PATH := MISE_DIR + ":" + env("PATH")
+
+# ---- Install the pinned mise and the tools in mise.toml; rerun after either changes
+[group('setup')]
+[script('bash')]
+mise:
+    set -euo pipefail
+    version={{ quote(MISE_VERSION) }}
+    mise={{ quote(MISE) }}
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo 'mise.toml must set min_version to an exact mise release' >&2
+        exit 1
+    fi
+    if [[ "$("$mise" --version 2>/dev/null)" != "$version "* ]]; then
+        installer="$(mktemp)"
+        trap 'rm -f -- "$installer"' EXIT
+        # The release's own installer embeds the checksums of its archives.
+        curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            "https://github.com/jdx/mise/releases/download/v$version/install.sh" --output "$installer"
+        MISE_VERSION="v$version" MISE_INSTALL_PATH="$mise" MISE_INSTALL_FROM_GITHUB=1 \
+            MISE_INSTALL_HELP=0 sh "$installer"
+    fi
+    ln -sfn mise "$(dirname -- "$mise")/mise-cytiq"
+    "$mise" trust --quiet
+    "$mise" install --locked
+
+# ---- Install the pinned actionlint (kept for existing instructions; `just mise` installs every tool)
 [group('setup')]
 install-actionlint:
-    bash scripts/install-actionlint.sh .tools/bin
+    mise install --locked actionlint
 
 # ---- Lint GitHub Actions workflows
 [group('quality')]
 lint:
-    @if [ -x .tools/bin/actionlint ]; then .tools/bin/actionlint -color; else actionlint -color; fi
+    actionlint -color
 
 [group('quality')]
 test:

@@ -21,6 +21,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install the pinned Python and gh
+        uses: ./.github/actions/mise
+        with:
+          tools: python,gh
+
       - name: Collect the last 30 full UTC days
         env:
           GH_TOKEN: ${{ secrets.CI_METRICS_TOKEN }}

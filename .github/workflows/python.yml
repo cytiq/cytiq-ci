@@ -7,13 +7,19 @@ on:
         type: string
         default: "."
       python_version:
-        description: "Python version compatible with the caller's lockfile"
+        description: >-
+          Python version compatible with the caller's lockfile. With a mise.toml in workdir, it only chooses among the
+          Python versions mise.toml pins (default: the first); without one it is required.
         type: string
-        required: true
+        default: ""
       uv_version:
-        description: "Exact uv version used to validate the caller's lockfile"
+        description: "Exact uv version used to validate the caller's lockfile; ignored with a mise.toml in workdir"
         type: string
-        required: true
+        default: ""
+      mise_tools:
+        description: "Comma-separated mise.toml tools that `uv sync` and `just ci` use (MISE_ENABLE_TOOLS)"
+        type: string
+        default: "python,uv"
     secrets:
       DEPS_TOKEN:
         description: "Read-only token for private git dependencies on github.com (used by `uv sync` only)"
@@ -33,12 +39,75 @@ jobs:
         with:
           persist-credentials: false
 
+      # A caller with mise.toml pins just, Python and uv there and installs them with its `just mise` recipe (as in
+      # .github/actions/mise, which a reusable workflow cannot call at its own revision).
+      - name: Read the tool configuration
+        id: tools
+        env:
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          UV_VERSION: ${{ inputs.uv_version }}
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          from pathlib import Path
+
+          config = Path("mise.toml")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              if not config.exists():
+                  if not (os.environ["PYTHON_VERSION"] and os.environ["UV_VERSION"]):
+                      raise SystemExit("::error::python_version and uv_version are required without mise.toml")
+                  print("mise=false", file=output)
+                  print("just=1.49.0", file=output)
+                  print(f"python={os.environ['PYTHON_VERSION']}", file=output)
+                  raise SystemExit
+              tools = tomllib.loads(config.read_text())["tools"]
+              pythons = tools["python"] if isinstance(tools["python"], list) else [tools["python"]]
+              python = os.environ["PYTHON_VERSION"] or str(pythons[0])
+              print("mise=true", file=output)
+              print(f"just={tools['just']}", file=output)
+              print(f"python={python}", file=output)
+          PY
+
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
-          just-version: 1.49.0
+          just-version: ${{ steps.tools.outputs.just }}
+
+      - name: Install mise, Python and uv
+        if: steps.tools.outputs.mise == 'true'
+        env:
+          MISE_ENABLE_TOOLS: ${{ inputs.mise_tools }}
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          # Avoids the shared anonymous GitHub API limit of hosted runners.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$MISE_ENABLE_TOOLS" =~ ^[A-Za-z0-9:/@._,-]+$ ]]; then
+            echo "::error::mise_tools must be a comma-separated list of mise tool names"
+            exit 1
+          fi
+          just mise
+          mise="$(just --evaluate MISE)"
+          {
+            echo "MISE_ENABLE_TOOLS=$MISE_ENABLE_TOOLS"
+            # uv takes the pinned interpreters from PATH and never downloads one.
+            echo "UV_PYTHON_PREFERENCE=only-system"
+            echo "UV_PYTHON_DOWNLOADS=never"
+            if [ -n "$PYTHON_VERSION" ]; then echo "UV_PYTHON=$PYTHON_VERSION"; fi
+          } >> "$GITHUB_ENV"
+          # Each GITHUB_PATH line is prepended, so the first tool must come last.
+          { dirname "$mise"; "$mise" bin-paths; } | tac >> "$GITHUB_PATH"
+
+      - name: Restore the uv cache
+        id: uv-cache
+        if: steps.tools.outputs.mise == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ runner.arch }}-python-${{ steps.tools.outputs.python }}-all-extras-dev-${{ hashFiles(format('{0}/uv.lock', inputs.workdir)) }}
+          restore-keys: uv-${{ runner.os }}-${{ runner.arch }}-python-${{ steps.tools.outputs.python }}-all-extras-dev-
 
       - name: Set up uv
         id: uv
+        if: steps.tools.outputs.mise != 'true'
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: ${{ inputs.uv_version }}
@@ -65,6 +134,22 @@ jobs:
           fi
           uv sync --locked --all-extras --group dev
 
+      # As setup-uv does: keep what cannot be rebuilt cheaply, drop pre-built wheels.
+      - name: Prune the uv cache
+        if: >-
+          steps.tools.outputs.mise == 'true' && steps.uv-cache.outputs.cache-hit != 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: uv cache prune --ci
+
+      - name: Save the uv cache
+        if: >-
+          steps.tools.outputs.mise == 'true' && steps.uv-cache.outputs.cache-hit != 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: ${{ steps.uv-cache.outputs.cache-primary-key }}
+
       - name: Run project CI
         env:
           UV_NO_SYNC: "true"
@@ -75,7 +160,7 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
+          CACHE_HIT: ${{ steps.uv.outputs.cache-hit || steps.uv-cache.outputs.cache-hit }}
         run: |
           mkdir -p "$RUNNER_TEMP/ci-cache"
           python3 - <<'PY'

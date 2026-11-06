@@ -10,6 +10,10 @@ Reusable GitHub Actions workflows for CI/CD across the `cytiq` repositories.
 | `release.yml` | Release flow: an RC tag opens a changelog PR; merging it creates a signed tag and a GitHub Release |
 | `docker-publish.yml` | Build and push a `linux/amd64` + `linux/arm64` image to GHCR with SBOM and provenance attestations; outputs the digest |
 
+| Action | Purpose |
+|---|---|
+| `.github/actions/mise` | Install the caller's pinned just, run its `just mise` and put the job's mise tools on later steps |
+
 Pin a released tag. Version 0.2.0 changes the Python caller contract:
 
 ```yaml
@@ -24,8 +28,12 @@ jobs:
 
 ### `python.yml`
 
-Installs the exact `uv_version` and selected `python_version`, restores the uv download cache keyed by
-`uv.lock`, and runs one `uv sync --locked --all-extras --group dev` in `workdir`. Only the default branch saves
+A caller with a `mise.toml` in `workdir` pins just, Python and uv there: the workflow installs that just and runs the
+caller's `just mise` with `MISE_ENABLE_TOOLS` set to `mise_tools` (default `python,uv`), so `uv sync` and `just ci`
+use exactly the pinned tools. `python_version` then only chooses among the Python versions `mise.toml` lists (for
+example `"3.11"` for a CI-only interpreter); `uv_version` is ignored. Without `mise.toml`, the workflow
+installs the exact `uv_version` and selected `python_version` as before. Either way it restores the uv download
+cache keyed by `uv.lock`, and runs one `uv sync --locked --all-extras --group dev` in `workdir`. Only the default branch saves
 the cache. It then runs `just ci` with `UV_NO_SYNC=true`, so project commands reuse that environment.
 
 Callers provide a non-mutating `ci` recipe containing their existing checks, fixtures and test selection.
@@ -174,10 +182,28 @@ proxy, not an exact measurement of required-check latency. Queue time is N/A whe
 timestamp. Cache rates cover instrumented restores only (Rust exact matches, uv restored entries), not Docker
 layer reuse or historical runs without telemetry. Raw workflow/job/event aggregates are in `report.json`.
 
+### `.github/actions/mise`
+
+For jobs outside `python.yml`. The caller's `mise.toml` pins `just` and `min_version` (the mise release); its
+justfile defines the `mise` recipe and the `MISE` variable, as in the cytiq repositories. `tools` lists the tools
+the job needs; later `just` and `mise exec` calls see only those, so a lint job never installs R or a fuzzing
+toolchain. Tool binaries and the mise environment (`[env]`, `RUSTUP_TOOLCHAIN`) reach later steps, so plain
+`cargo` or `python3` steps work too. Installed tools are cached per tool list and `mise.lock`, except Rust
+toolchains, which rustup reinstalls; pull requests read the cache but never write it.
+
+```yaml
+steps:
+  - uses: actions/checkout@<sha> # v7
+  - uses: cytiq/cytiq-ci/.github/actions/mise@<sha> # <release>
+    with:
+      tools: rust,github:taiki-e/cargo-llvm-cov
+  - run: just coverage
+```
+
 ## Development
 
 ```bash
-just install-actionlint
+just mise            # once: the pinned mise, Python, actionlint, zizmor and gh
 just lint            # actionlint over .github/workflows
 just test            # Python 3.11+: reporting behavior tests
 just security        # pinned zizmor: low-and-higher findings
