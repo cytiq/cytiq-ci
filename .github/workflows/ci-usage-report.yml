@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
 
       - name: Install the pinned Python and gh
-        uses: ./.github/actions/mise
+        uses: ./.github/actions/mise # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility
         with:
           tools: python,gh
 

@@ -70,7 +70,8 @@ jobs:
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
-          just-version: ${{ steps.tools.outputs.just }}
+          # 1.49.0, or the exact version the caller's mise.toml pins.
+          just-version: ${{ steps.tools.outputs.just }} # zizmor: ignore[unpinned-tools]
 
       - name: Install mise, Python and uv
         if: steps.tools.outputs.mise == 'true'

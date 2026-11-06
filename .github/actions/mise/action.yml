@@ -62,7 +62,8 @@ runs:
     - name: Install just
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       with:
-        just-version: ${{ steps.config.outputs.just }}
+        # The exact version the caller's mise.toml pins.
+        just-version: ${{ steps.config.outputs.just }} # zizmor: ignore[unpinned-tools]
 
     - name: Locate mise
       id: paths
@@ -90,7 +91,8 @@ runs:
         TOOLS: ${{ inputs.tools }}
         # Avoids the shared anonymous GitHub API limit of hosted runners.
         GITHUB_TOKEN: ${{ github.token }}
-      run: |
+      # TOOLS passed the tool-name pattern above, so it cannot add a line to GITHUB_ENV.
+      run: | # zizmor: ignore[github-env]
         if [ -n "$TOOLS" ]; then
           export MISE_ENABLE_TOOLS="$TOOLS"
           echo "MISE_ENABLE_TOOLS=$TOOLS" >> "$GITHUB_ENV"
