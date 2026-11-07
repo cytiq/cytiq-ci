@@ -29,3 +29,15 @@ report/
 report-replayed/
 __pycache__/
 *.pyc
+
+# Shared agent configuration; indexes, logs and memories stay local.
+!.serena/
+.serena/*
+!.serena/project.yml
+!.grepai/
+.grepai/*
+!.grepai/config.yaml
+.claude/worktrees/
+.worktrees/
+worktrees/
+repomix-output*

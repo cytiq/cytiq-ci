@@ -1,0 +1,41 @@
+project_name: cytiq-ci
+language_servers:
+- python
+encoding: utf-8
+ignore_all_files_in_gitignore: true
+ignored_paths:
+- .git/**
+- .serena/**
+- .grepai/**
+- .claude/worktrees/**
+- .worktrees/**
+- worktrees/**
+- '**/target/**'
+- '**/.venv/**'
+- '**/node_modules/**'
+- '**/dist/**'
+- '**/build/**'
+- '**/__pycache__/**'
+- '**/generated/**'
+- '**/*.generated.*'
+read_only: false
+default_modes: null
+added_modes: null
+included_apis: []
+excluded_apis: []
+excluded_tools: []
+included_optional_tools: []
+fixed_tools: []
+symbol_info_budget: null
+language_backend: null
+agent_interface: null
+line_ending: null
+read_only_memory_patterns: []
+ignored_memory_patterns: []
+ls_specific_settings: {}
+ls_workspace_folders:
+- .
+ls_additional_workspace_folders: []
+initial_prompt: ''
+activation_command: null
+activation_command_timeout: 180.0
