@@ -1,0 +1,42 @@
+version: 1
+embedder:
+  provider: ollama
+  model: nomic-embed-text
+  endpoint: http://127.0.0.1:11434
+  dimensions: 768
+store:
+  backend: gob
+chunking:
+  size: 512
+  overlap: 50
+watch:
+  discover_worktrees: false
+search:
+  dedup:
+    enabled: true
+ignore:
+- .git
+- .grepai
+- .serena
+- .agents/skills
+- .claude/skills
+- node_modules
+- vendor
+- bin
+- dist
+- build
+- __pycache__
+- .venv
+- venv
+- .idea
+- .vscode
+- target
+- .zig-cache
+- zig-out
+- qdrant_storage
+- .claude/worktrees
+- .worktrees
+- worktrees
+- tmp
+- temp
+- generated

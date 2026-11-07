@@ -1,0 +1,9 @@
+[mcp_servers.serena]
+command = "uvx"
+args = [
+  "--python", "3.13", "--from", "serena-agent==2.1.0",
+  "serena", "start-mcp-server", "--context", "codex", "--agent-interface", "REPL",
+  "--project-from-cwd", "--open-web-dashboard", "false",
+  "--enable-gui-log-window", "false",
+]
+startup_timeout_sec = 120
