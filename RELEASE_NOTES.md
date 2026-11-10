@@ -1,10 +1,10 @@
-## [0.4.0](https://github.com/cytiq/cytiq-ci/compare/0.3.0..0.4.0) - 2026-11-05
+## [0.5.0](https://github.com/cytiq/cytiq-ci/compare/0.4.0..0.5.0) - 2026-11-10
 
-### 🐛 Bug Fixes
+### ⛰️  Features
 
-- *(release)* Move workspace path-dependency versions with the release ([#24](https://github.com/cytiq/cytiq-ci/issues/24)) - ([f1815f7](https://github.com/cytiq/cytiq-ci/commit/f1815f7cce5e12bb92d6e7f63fa568ed263f7cca))
+- Install pinned tools through mise ([#26](https://github.com/cytiq/cytiq-ci/issues/26)) - ([4765ebc](https://github.com/cytiq/cytiq-ci/commit/4765ebc677f78300946546051b0d9b25bb13a1dc))
 
 ### ⚙️ Miscellaneous Tasks
 
-- *(skills)* Add Pierre trees and diffs for Codex and Claude ([#22](https://github.com/cytiq/cytiq-ci/issues/22)) - ([2ade8fa](https://github.com/cytiq/cytiq-ci/commit/2ade8fafb731d749fc2684259c3129953b979dfa))
-- Update cytiq-engine references ([#23](https://github.com/cytiq/cytiq-ci/issues/23)) - ([f9c3c8e](https://github.com/cytiq/cytiq-ci/commit/f9c3c8e71277eae658d6984e56be94f12614a00e))
+- *(agents)* Configure Serena and grepai ([#28](https://github.com/cytiq/cytiq-ci/issues/28)) - ([292baa5](https://github.com/cytiq/cytiq-ci/commit/292baa5877319d8d6ae3249a743cff0ea70b4fbb))
+- *(skills)* Add token-efficient-coding for Codex and Claude ([#27](https://github.com/cytiq/cytiq-ci/issues/27)) - ([90c530b](https://github.com/cytiq/cytiq-ci/commit/90c530ba0a2d6401a50b63f715b259dac71ccc55))
