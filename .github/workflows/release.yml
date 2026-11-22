@@ -117,7 +117,7 @@ jobs:
 
       - name: Install typos-cli
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with:
           tool: typos
 
@@ -252,7 +252,7 @@ jobs:
       # account that registered the signing key (otherwise: unknown_key).
       - name: Create changelog pull request
         if: steps.vars.outputs.is_changelog_run == 'true'
-        uses: peter-evans/create-pull-request@15733dbdfeedb4f7fdb73d13c6f5ac83b710fab8 # v8
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8
         with:
           token: ${{ secrets.GH_TOKEN || github.token }}
           committer: ${{ env.GIT_USER_NAME }} <${{ env.GIT_USER_EMAIL }}>
