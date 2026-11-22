@@ -1,4 +1,13 @@
 # Changelog
+## [0.6.0](https://github.com/cytiq/cytiq-ci/compare/0.5.0..0.6.0) - 2026-11-22
+
+### ⛰️  Features
+
+- *(release)* Support reproducible stack image publication ([#33](https://github.com/cytiq/cytiq-ci/issues/33)) - ([ef7bc43](https://github.com/cytiq/cytiq-ci/commit/ef7bc4357b7d8951d64dd6b510287f3a2de65f4c))
+
+### 📚 Documentation
+
+- Require Cytiq wiki updates in agent instructions ([#32](https://github.com/cytiq/cytiq-ci/issues/32)) - ([d081039](https://github.com/cytiq/cytiq-ci/commit/d081039c856ede525d3dedb7fbbaa3db3e4902c4))
 ## [0.5.0](https://github.com/cytiq/cytiq-ci/compare/0.4.0..0.5.0) - 2026-11-10
 
 ### ⛰️  Features
@@ -8,6 +17,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(agents)* Configure Serena and grepai ([#28](https://github.com/cytiq/cytiq-ci/issues/28)) - ([292baa5](https://github.com/cytiq/cytiq-ci/commit/292baa5877319d8d6ae3249a743cff0ea70b4fbb))
+- *(release)* Update changelog for 0.5.0 ([#30](https://github.com/cytiq/cytiq-ci/issues/30)) - ([5f0c918](https://github.com/cytiq/cytiq-ci/commit/5f0c9184c5d6b8174c5796d300dafa2fb988852d))
 - *(skills)* Add token-efficient-coding for Codex and Claude ([#27](https://github.com/cytiq/cytiq-ci/issues/27)) - ([90c530b](https://github.com/cytiq/cytiq-ci/commit/90c530ba0a2d6401a50b63f715b259dac71ccc55))
 ## [0.4.0](https://github.com/cytiq/cytiq-ci/compare/0.3.0..0.4.0) - 2026-11-05
 
