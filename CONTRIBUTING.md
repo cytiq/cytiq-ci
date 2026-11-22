@@ -23,9 +23,13 @@ Reusable GitHub Actions workflows (`on: workflow_call`) for the `cytiq` reposito
   `bun install --lockfile-only` rather than the caller's `just lock`, which may upgrade every dependency.
   Path dependencies in tracked `Cargo.toml` files that require the previous version move with it; otherwise a
   minor or major bump leaves their range and `cargo update --workspace` fails before the PR opens.
-- `docker-publish.yml` takes `ref`, `build_args` and `platforms`, builds each platform on a native runner
+- `docker-publish.yml` takes `ref`, `target`, `build_args` and `platforms`, builds each platform on a native runner
   (`ubuntu-24.04-arm` for arm64) and merges them into one manifest list, pushes SBOM and provenance attestations,
-  and returns the manifest list's `digest`.
+  and returns the manifest list's `digest`. It labels images with the actual checkout's revision.
+- Use `CYTIQ_DEPS_TOKEN` for private Python dependencies. The release workflow scopes the credential to
+  `uv lock`; the Docker workflow mounts it as the `GITHUB_TOKEN` BuildKit secret.
+- Stable release runs tag the triggering merge commit. A rerun accepts an existing annotated tag pointing to
+  that commit; a conflicting tag fails the workflow.
 
 ## Conventions
 

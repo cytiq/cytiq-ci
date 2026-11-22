@@ -12,6 +12,10 @@ on:
         description: "Release tag; for a release run, the changelog branch name (see tag_prefix)"
         type: string
         required: true
+      ref:
+        description: "Exact commit to check out; stable merge runs default to the merge commit"
+        type: string
+        default: ""
       tag_prefix:
         description: "Prefix to strip from tag (for branch-based tags)"
         type: string
@@ -30,6 +34,9 @@ on:
         default: false
     secrets:
       GH_TOKEN:
+        required: false
+      CYTIQ_DEPS_TOKEN:
+        description: "Read-only token for private dependencies during uv lock"
         required: false
       GPG_PRIVATE_KEY:
         required: false
@@ -104,7 +111,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ inputs.ref || (steps.vars.outputs.is_changelog_run == 'false' && github.event.pull_request.merge_commit_sha) || 'main' }}
           token: ${{ secrets.GH_TOKEN || github.token }}
           persist-credentials: false
 
@@ -215,7 +222,17 @@ jobs:
 
       - name: Update uv.lock
         if: steps.version.outputs.uv == 'true'
-        run: uv lock
+        env:
+          DEPS_TOKEN: ${{ secrets.CYTIQ_DEPS_TOKEN }}
+        run: |
+          if [[ -n "$DEPS_TOKEN" ]]; then
+            export GIT_CONFIG_COUNT=2
+            export GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0=
+            export GIT_CONFIG_KEY_1=credential.https://github.com.helper
+            # shellcheck disable=SC2016
+            export GIT_CONFIG_VALUE_1='!f() { test "$1" = get || return 0; echo username=x-access-token; echo "password=${DEPS_TOKEN}"; }; f'
+          fi
+          uv lock
 
       - name: Update Cargo.lock
         if: steps.version.outputs.cargo == 'true'
@@ -260,12 +277,30 @@ jobs:
           TAG: ${{ steps.vars.outputs.tag }}
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
-          git tag -fs "$TAG" -m "Release $TAG"
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable version, got $TAG"
+            exit 1
+          fi
+          commit=$(git rev-parse HEAD)
           authorization=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
-          GIT_CONFIG_COUNT=1 \
-          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
-          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization" \
-            git push origin "$TAG" --force
+          echo "::add-mask::$authorization"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization"
+
+          ref="refs/tags/$TAG"
+          tags=$(git ls-remote --tags origin "$ref" "$ref^{}")
+          if [[ -n "$tags" ]]; then
+            tagged_commit=$(awk -v ref="$ref^{}" '$2 == ref { print $1 }' <<< "$tags")
+            if [[ "$tagged_commit" != "$commit" ]]; then
+              echo "::error::Existing tag $TAG is not an annotated tag on $commit"
+              exit 1
+            fi
+            exit 0
+          fi
+          git tag -s "$TAG" -m "Release $TAG" "$commit"
+          git push origin "$ref"
 
       - name: Generate release notes for GitHub Release
         if: steps.vars.outputs.is_changelog_run == 'false' && steps.vars.outputs.from_pr != 'true'
@@ -285,6 +320,7 @@ jobs:
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
           name: ${{ steps.vars.outputs.tag }}
+          target_commitish: ${{ inputs.ref || github.event.pull_request.merge_commit_sha || 'main' }}
           body_path: RELEASE_NOTES.md
           files: ${{ inputs.artifacts }}
         env:

@@ -31,6 +31,10 @@ on:
         description: "Path to the Dockerfile"
         type: string
         default: "Dockerfile"
+      target:
+        description: "Optional Dockerfile build stage"
+        type: string
+        default: ""
       build_args:
         description: "Build arguments, one KEY=VALUE per line"
         type: string
@@ -53,6 +57,9 @@ on:
         default: "cytiq"
     secrets:
       GH_TOKEN:
+        required: false
+      CYTIQ_DEPS_TOKEN:
+        description: "Read-only token mounted as the GITHUB_TOKEN BuildKit secret"
         required: false
     outputs:
       image:
@@ -129,6 +136,10 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
+      - name: Read the checked-out commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -146,7 +157,14 @@ jobs:
           context: ${{ inputs.context }}
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
+          target: ${{ inputs.target }}
           build-args: ${{ inputs.build_args }}
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.CYTIQ_DEPS_TOKEN }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.commit }}
+            org.opencontainers.image.version=${{ inputs.version }}
           cache-from: ${{ inputs.enable_cache && format('type=registry,ref={0}:cache-{1}', needs.prepare.outputs.image, matrix.slug) || '' }}
           cache-to: >-
             ${{ inputs.enable_cache &&
